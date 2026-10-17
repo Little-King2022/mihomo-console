@@ -1,0 +1,80 @@
+# 项目维护约束
+
+修改之前先读 [README.md](README.md)。这是 Linux / systemd 环境的 Mihomo 透明代理控制台，当前代码含校园网 DNS 和 TUN 定制。以下约束用于防止改坏正在转发的代理。
+
+## 运行环境与变更顺序
+
+- 正式内核是 `mihomo.service`，控制台是 `mihomo-console.service`；ClashTUI 已停用。不要同时启动第二套 Mihomo，旧的 `/opt/clashtui/mihomo` 仅用于回滚。
+- 当前机器源码在用户家目录的 `mihomo-console`，运行副本在 `/opt/mihomo-console`。仅修改源码不影响正在运行的服务。
+- `/opt/mihomo/config/config.yaml` 由 `app/render.py` 生成，禁止手改。
+- 控制台长期持有导入模块。Python 变更或配置生成逻辑变更后，先同步 `app/` 到 `/opt/mihomo-console/app/`，重启控制台，再按需调用 `service.apply_config()`。不要让旧后台进程把旧配置写回去。
+- 仅修改文档不需要重启服务；仅修改前端或非渲染 Python 代码不需要重载内核。不要用部署示例覆盖现有 Nginx 配置。
+- `apply_config()` 会先执行内核 `-t` 自检。修改订阅、组和规则时使用已有事务及跨进程配置锁，校验失败应保留数据库和原配置。
+
+本机历史部署与回滚路径保存在被 Git 忽略的 `docs/LOCAL_OPERATIONS.md`（如果存在）。不要将其中的个人地址复制到公共示例。
+
+## 节点、代理组与规则
+
+- `fallback` / `url-test` 的手动 `proxies` 必须保持 `[]`；不能加入 `DIRECT` 或其他组名，它们会排在真实节点之前。
+- 单订阅节点不加前缀；多订阅只用 `s{id}-`，不能包含订阅名称，否则名称里的「家宽」等字样会干扰筛选。
+- 用户通过节点卡片勾选成员；持久化身份为订阅 provider 与原始节点名。正则仅用于程序生成的精确匹配，不恢复面向用户的正则筛选。
+- 空选择、来源订阅停用、节点消失时应使用 `REJECT`，不能偷偷改走直连或未勾选的节点。
+- 分流规则通过组 ID 关联，组改名不能破坏规则；默认出口及仍被规则引用的组受删除保护。
+- 每次健康检查用当前节点全量替换 `node_health`；短暂停用只保留当前订阅仍存在的节点。测速历史按实际检测时间去重，最多 24 次。
+- 新安装不内置任何真实订阅；不要因订阅列表为空而重新插入个人订阅。
+
+## 网络配置
+
+改 `render.py` 前后都要核对以下校园网约束，不能为了通用化文档而直接删除：
+
+- `auth-6441.wifi.com` 仍由 `10.64.0.134` 解析。
+- `+.littleking.site`、`+.njau.edu.cn` 保持原有直连解析设置。
+- TUN 的私网、回环和保留地址排除保持有效。
+- 代理端口、内核控制 API 和诊断入站默认仅供本机使用；文档展示不能擅自开启 LAN 监听。
+
+## 前端与检测行为
+
+- 使用浏览器原生 ES Modules。`app/static/app.js` 只做初始化；页面放 `js/pages/`，功能放 `js/features/`，公共交互放 `js/ui/`。
+- 依赖使用显式 import；不引入循环引用、隐式全局函数或仅导入模块就开始执行的轮询。
+- 主题、当前 Tab、订阅子 Tab 和展开状态应在已有刷新流程中保持；后台重绘不能把用户带回概览。
+- `.hidden { display: none !important; }` 必须位于 `app.css` 末尾，否则透明全屏弹层可能挡住登录。
+- 两处节点测速历史统一使用 `ui/history.js`，保留鼠标、键盘和触屏交互。
+- 概览 IP / 延迟只在当前文档首次展示概览或手动刷新时检测；切换组、来源、Tab、节点变化及后台轮询不能自动发起检测。手动刷新不设置时间冷却，只合并进行中的同一请求。
+- IP 纯净度仅手动检测。按组保存快照，保留当时 IP、节点和时间；节点变化只提示重测。
+- 所有组诊断都通过内核中绑定该组的 loopback listener。验证入口的组名、地址和端口，失败时不能改走普通 mixed 端口、本机直连或其他组。
+- IPPure 的来源、属性、分数读取真实网页接口字段；缺失不能推断成原生、住宅或 0 分。接口地址、匿名会话、IPv6 和失败提示的约束见 README 与测试。
+- 用户输入和上游数据进入 HTML 前必须转义；可复制的命令不要因格式化插入额外空格和换行。
+
+## 凭据与公开发布
+
+- Web 登录令牌、内核 API 密钥、订阅 URL、节点密码、私钥、匿名会话密钥不能写入文档、日志、截图或回复。运行令牌文件在 `/opt/mihomo-console/data/token`。
+- 不提交数据库、运行配置、provider 缓存、环境文件、备份、HAR、浏览器状态文件或本机运维记录。`.gitignore` 不是唯一检查手段，提交前也要核对实际暂存文件。
+- 直链登录只通过 POST 建立会话；读取后立即移除 URL 中的 token。访问日志必须保留脱敏过滤，不能把查询令牌原样写入日志。
+- README 截图用 `scripts/capture-screenshots.mjs` 与演示数据生成；不得使用真实订阅、出口 IP 或浏览历史。
+- 对公开文件做秘密扫描，并在内存中与本机实际凭据比对；报告只打印文件位置和类型，不打印命中的值。不要删除已经保存的用户订阅来清理源码。
+
+## 验证
+
+```bash
+python3.12 -m unittest tests.test_render
+.venv/bin/python -m unittest discover -s tests
+npm run test:frontend
+sudo /opt/mihomo/mihomo -t -d /opt/mihomo/config -f /opt/mihomo/config/config.yaml
+systemctl is-active mihomo mihomo-console
+```
+
+当前机器也可使用 `/opt/mihomo-console/.venv/bin/python`。测试使用临时数据目录，不连接正式数据库。
+
+按改动范围验证浏览器交互：登录、Tab 恢复、勾选节点、分流域名折叠、订阅子 Tab、测速提示、复制、手动诊断、深色主题和窄屏布局。不要为验证而启动第二套内核。
+
+内核重载后，组的 `now` 应为具体节点，不能是 `DIRECT`。当前默认规则中 ChatGPT 应走 `台湾家宽`，其他境外域名应走 `境外常规`。
+
+## 回滚
+
+先保存本机服务和配置的备份路径。回滚时：
+
+1. 停止当前 `mihomo.service`，确认它已释放 TUN 和 7890。
+2. 使用本机 `/opt/clashtui/mihomo` 的旧二进制与旧配置恢复原服务。
+3. 恢复本机留存的 Nginx 站点备份，先 `nginx -t` 再重载。
+
+不能在新服务仍占用 TUN 或 7890 时启动旧服务。实际 Nginx 备份文件名以本机运维记录为准。

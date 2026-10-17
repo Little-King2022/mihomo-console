@@ -1,0 +1,47 @@
+# Runtime data and credentials
+.local/
+.private/
+data/
+config/
+providers/
+ruleset/
+backups/
+token
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+*.har
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.bak
+*.backup
+*.download
+# Host-specific notes and secrets
+docs/LOCAL_OPERATIONS.md
+deploy/*-auth.conf
+# Tooling and caches
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+playwright-report/
+test-results/
+.DS_Store
+.idea/
+.vscode/

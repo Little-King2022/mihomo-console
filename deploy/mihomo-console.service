@@ -1,0 +1,15 @@
+[Unit]
+Description=Mihomo web console
+After=network.target mihomo.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mihomo-console
+Environment=DATA_DIR=/opt/mihomo-console/data
+Environment=MIHOMO_HOME=/opt/mihomo
+ExecStart=/opt/mihomo-console/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8787
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

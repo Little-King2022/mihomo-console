@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>Mihomo · 网络控制台</title>
+  <script>try { document.documentElement.dataset.theme = localStorage.getItem('mihomo-theme') || 'light'; } catch {}</script>
+  <link rel="stylesheet" href="/static/app.css?v=20261017-ip-purity">
+</head>
+<body>
+  <div id="login" class="login hidden">
+    <div class="login-story"><div class="brand" data-brand></div><div><span class="eyebrow">你的网络，由你安排</span><h1>让连接<br>各行其道。</h1><p>AI 服务走家宽，日常访问走常规出口。<br>清晰的规则，恰好的控制。</p><div class="login-orbit" aria-hidden="true"><i></i><i></i><i></i><span>m</span></div></div><span class="small">MIHOMO / NETWORK CONSOLE</span></div>
+    <form class="dialog login-form" id="login-form">
+      <div class="login-symbol" data-icon="layers"></div><span class="eyebrow">欢迎回来</span><h2>进入网络控制台</h2><p class="muted">使用访问令牌，管理你的代理与连接。</p>
+      <label for="token">访问令牌</label><input id="token" type="password" autocomplete="current-password" placeholder="输入访问令牌" required>
+      <p class="err" id="login-err" role="alert"></p><button class="btn primary" type="submit">进入控制台 <span aria-hidden="true">→</span></button>
+      <p class="login-note small muted">连接更简单，选择更自由。</p>
+    </form>
+  </div>
+  <div id="shell" class="app hidden">
+    <aside class="side">
+      <a class="brand" href="#overview" data-brand aria-label="Mihomo 概览"></a>
+      <div class="nav-label">工作空间</div>
+      <nav aria-label="主要导航">
+        <button data-page="overview" class="active"><span data-icon="overview"></span>概览<span class="nav-indicator"></span></button>
+        <button data-page="subs"><span data-icon="layers"></span>订阅</button>
+        <button data-page="rules"><span data-icon="route"></span>分流规则</button>
+        <button data-page="groups"><span data-icon="globe"></span>代理组</button>
+        <button data-page="nodes"><span data-icon="pulse"></span>节点健康</button>
+        <button data-page="purity"><span data-icon="shield"></span>IP 纯净度</button>
+        <button data-page="advanced"><span data-icon="settings"></span>高级</button>
+      </nav>
+      <div class="side-tip"><span data-icon="route"></span><strong>为每次连接，选对出口。</strong><p>简单的分流，让常用服务<br>各走各的好线路。</p></div>
+      <div class="side-foot"><div class="core-mark"><span data-icon="cpu"></span><div><strong>Mihomo Core</strong><div id="kernel-version" class="small muted"></div></div></div><span class="status-dot"></span></div>
+    </aside>
+    <main>
+      <header class="top"><div class="breadcrumb">工作空间 <span>/</span> <span id="breadcrumb-page">概览</span></div><div class="row top-actions"><button class="icon-btn" id="theme-toggle" aria-label="切换深色主题" title="切换主题"></button><button class="icon-btn" id="refresh" aria-label="刷新数据" title="刷新数据"><span data-icon="refresh"></span></button><span class="top-divider"></span><button class="btn subtle" id="logout"><span data-icon="logout"></span>退出</button></div></header>
+      <div class="page-heading"><div><div class="eyebrow" id="page-eyebrow">NETWORK OVERVIEW</div><h1 id="title">网络概览<span class="heading-dot">.</span></h1><p id="page-description" class="muted">每一次连接，都有迹可循。</p></div><div class="heading-controls"><div class="segment" id="modes" aria-label="代理模式"><button data-mode="rule">规则</button><button data-mode="global">全局</button><button data-mode="direct">直连</button></div><button class="btn tun-btn" id="tun">TUN</button></div></div>
+      <section id="page-overview"></section><section id="page-subs" class="hidden"></section><section id="page-rules" class="hidden"></section><section id="page-groups" class="hidden"></section><section id="page-nodes" class="hidden"></section><section id="page-purity" class="hidden"></section><section id="page-advanced" class="hidden"></section>
+      <footer class="workspace-footer"><span>Mihomo Console</span><span>让网络回归简单 <span aria-hidden="true">↗</span></span></footer>
+    </main>
+  </div>
+  <div id="history-tooltip" class="history-tooltip hidden" role="tooltip"></div>
+  <div id="notice" role="status" aria-live="polite" class="notice hidden"></div><div id="modal" class="modal hidden"></div>
+  <script type="module" src="/static/app.js?v=20261017-ip-purity"></script>
+</body>
+</html>

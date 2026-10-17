@@ -27,6 +27,7 @@ try {
       '/api/overview': demo.overview, '/api/subscriptions': demo.subscriptions,
       '/api/rules': demo.rules, '/api/groups': demo.groups, '/api/nodes': demo.nodes,
       '/api/node-catalog': demo.catalog, '/api/telemetry': demo.telemetry,
+      '/api/campus': demo.campus,
     };
     let data = endpoints[pathname];
     const match = pathname.match(/^\/api\/groups\/(\d+)\/diagnostics\/(ip|latency|purity)$/);
@@ -77,12 +78,16 @@ try {
   await page.locator('#purity-run').click();
   await page.waitForFunction(() => document.querySelector('#purity-ip')?.textContent.includes('203.0.113'));
   await page.screenshot({ path: resolve(output, 'purity.png'), fullPage: true });
+  await page.getByRole('button', { name: '校园网', exact: true }).click();
+  await page.locator('#campus-add-network').waitFor();
+  await page.screenshot({ path: resolve(output, 'campus.png'), fullPage: true });
+  await page.getByRole('button', { name: 'IP 纯净度', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 1000 });
   await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
   await page.screenshot({ path: resolve(output, 'mobile.png'), fullPage: true });
   if (errors.length) throw new Error(errors.join('\n'));
   if (externalRequests) throw new Error(`Blocked ${externalRequests} unexpected external requests`);
-  console.log('Captured 6 screenshots from synthetic fixtures; no credentials or external API requests.');
+  console.log('Captured 7 screenshots from synthetic fixtures; no credentials or external API requests.');
 } finally {
   await browser.close();
 }

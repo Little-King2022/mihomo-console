@@ -6,6 +6,8 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
+from .campus_config import load_config
+
 _lock = threading.RLock()
 _transaction_depth = 0
 _conn = None
@@ -163,6 +165,11 @@ def init_db():
     for key, value in defaults.items():
         if get_setting(key) is None:
             set_setting(key, value)
+    # Persist once: intentionally empty v2 lists must stay empty across restarts.
+    campus_raw = get_setting("campus_config")
+    campus_config = load_config(campus_raw)
+    if campus_raw is None or json.loads(campus_raw).get("schema_version") != 2:
+        set_setting("campus_config", dump_json(campus_config))
     if not _query("SELECT id FROM groups LIMIT 1"):
         add_group(
             {

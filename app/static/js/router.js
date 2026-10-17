@@ -8,8 +8,9 @@ import { renderGroups } from './pages/groups.js';
 import { renderNodes } from './pages/nodes.js';
 import { renderPurity } from './pages/purity.js';
 import { renderAdvanced } from './pages/advanced.js';
+import { renderCampus } from './pages/campus.js';
 
-const pages = ['overview', 'subs', 'rules', 'groups', 'nodes', 'purity', 'advanced'];
+const pages = ['overview', 'subs', 'rules', 'groups', 'nodes', 'purity', 'campus', 'advanced'];
 
 const titles = {
   overview: '概览',
@@ -18,6 +19,7 @@ const titles = {
   groups: '代理组',
   nodes: '节点健康',
   purity: 'IP 纯净度',
+  campus: '校园网',
   advanced: '高级',
 };
 
@@ -28,6 +30,7 @@ const pageMeta = {
   groups: ['PROXY GROUPS', '代理组', '用一组可靠的节点，连接更大的世界。'],
   nodes: ['NODE HEALTH', '节点健康', '用真实的测速记录，找到稳定的连接。'],
   purity: ['IP PURITY', 'IP 纯净度', '看清出口的身份，了解 IP 的风险。'],
+  campus: ['CAMPUS NETWORK', '校园网', '管理校园网段、DNS 与直连路由。'],
   advanced: ['PREFERENCES', '高级设置', '更多控制，在你需要的时候。'],
 };
 
@@ -51,6 +54,7 @@ function renderCurrent() {
     groups: renderGroups,
     nodes: renderNodes,
     purity: renderPurity,
+    campus: renderCampus,
     advanced: renderAdvanced,
   })[current]();
 }

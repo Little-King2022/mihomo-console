@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import db, diagnostics, service
+from . import campus, db, diagnostics, service
 
 log = logging.getLogger("mihomo-console")
 STATIC = Path(__file__).resolve().parent / "static"
@@ -175,6 +175,55 @@ def overview(request: Request):
 def subscriptions(request: Request):
     require(request)
     return db.list_subscriptions()
+
+
+@app.get("/api/campus")
+def campus_status(request: Request):
+    require(request)
+    return campus.status()
+
+
+def campus_mutation(kind, payload=None, entry_id=None, delete=False):
+    try:
+        with service.config_change():
+            result = campus.change(kind, payload, entry_id, delete)
+        return result
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        # Core validation output can contain subscription details; never return it.
+        raise HTTPException(status_code=400, detail="校园网配置应用失败，已保留原设置；请检查内核与配置") from exc
+
+
+@app.post("/api/campus/diagnostics")
+def campus_diagnostics(payload: dict, request: Request):
+    require(request)
+    try:
+        return campus.diagnose(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/campus/{kind}")
+def create_campus_entry(kind: str, payload: dict, request: Request):
+    require(request)
+    return campus_mutation(kind, payload)
+
+
+@app.put("/api/campus/{kind}/{entry_id}")
+def edit_campus_entry(kind: str, entry_id: str, payload: dict, request: Request):
+    require(request)
+    return campus_mutation(kind, payload, entry_id)
+
+
+@app.delete("/api/campus/{kind}/{entry_id}")
+def delete_campus_entry(kind: str, entry_id: str, request: Request):
+    require(request)
+    return campus_mutation(kind, entry_id=entry_id, delete=True)
 
 
 @app.post("/api/groups/{group_id}/diagnostics/{kind}")

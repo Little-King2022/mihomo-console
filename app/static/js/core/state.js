@@ -6,6 +6,7 @@ const state = {
   rules: [],
   groups: [],
   nodes: [],
+  campus: null,
   telemetry: null,
   filter: '',
   health: 'all',

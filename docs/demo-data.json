@@ -3787,5 +3787,172 @@
         "download": 1500000
       }
     ]
+  },
+  "campus": {
+    "networks": [
+      {
+        "id": "legacy-network-0",
+        "name": "10.0.0.0/8",
+        "cidr": "10.0.0.0/8",
+        "enabled": true,
+        "direct": false
+      },
+      {
+        "id": "legacy-network-1",
+        "name": "127.0.0.0/8",
+        "cidr": "127.0.0.0/8",
+        "enabled": true,
+        "direct": false
+      },
+      {
+        "id": "legacy-network-2",
+        "name": "169.254.0.0/16",
+        "cidr": "169.254.0.0/16",
+        "enabled": true,
+        "direct": false
+      },
+      {
+        "id": "legacy-network-3",
+        "name": "172.16.0.0/12",
+        "cidr": "172.16.0.0/12",
+        "enabled": true,
+        "direct": false
+      },
+      {
+        "id": "legacy-network-4",
+        "name": "192.168.0.0/16",
+        "cidr": "192.168.0.0/16",
+        "enabled": true,
+        "direct": false
+      },
+      {
+        "id": "legacy-network-5",
+        "name": "224.0.0.0/4",
+        "cidr": "224.0.0.0/4",
+        "enabled": true,
+        "direct": false
+      },
+      {
+        "id": "legacy-network-6",
+        "name": "240.0.0.0/4",
+        "cidr": "240.0.0.0/4",
+        "enabled": true,
+        "direct": false
+      },
+      {
+        "id": "demo-network",
+        "name": "图书馆资源（演示）",
+        "cidr": "203.0.113.0/24",
+        "enabled": true,
+        "direct": true
+      }
+    ],
+    "dns": [
+      {
+        "id": "legacy-dns-0",
+        "name": "+.lan",
+        "domain": "+.lan",
+        "enabled": true,
+        "direct": false,
+        "server": ""
+      },
+      {
+        "id": "legacy-dns-1",
+        "name": "+.local",
+        "domain": "+.local",
+        "enabled": true,
+        "direct": false,
+        "server": ""
+      },
+      {
+        "id": "legacy-dns-2",
+        "name": "+.market.xiaomi.com",
+        "domain": "+.market.xiaomi.com",
+        "enabled": true,
+        "direct": false,
+        "server": ""
+      },
+      {
+        "id": "legacy-dns-3",
+        "name": "auth-6441.wifi.com",
+        "domain": "auth-6441.wifi.com",
+        "enabled": true,
+        "direct": false,
+        "server": "10.64.0.134"
+      },
+      {
+        "id": "legacy-dns-4",
+        "name": "+.littleking.site",
+        "domain": "+.littleking.site",
+        "enabled": true,
+        "direct": false,
+        "server": ""
+      },
+      {
+        "id": "legacy-dns-5",
+        "name": "+.njau.edu.cn",
+        "domain": "+.njau.edu.cn",
+        "enabled": true,
+        "direct": false,
+        "server": ""
+      },
+      {
+        "id": "demo-dns",
+        "name": "教学平台（演示）",
+        "domain": "+.library.example.edu.cn",
+        "server": "192.0.2.53",
+        "enabled": true,
+        "direct": true
+      }
+    ],
+    "effective_excludes": [
+      "10.0.0.0/8",
+      "127.0.0.0/8",
+      "169.254.0.0/16",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "224.0.0.0/4",
+      "240.0.0.0/4",
+      "203.0.113.0/24",
+      "192.0.2.53/32"
+    ],
+    "config_matches": true,
+    "tun": true,
+    "system": {
+      "routes": [
+        {
+          "dst": "default",
+          "gateway": "192.0.2.1",
+          "dev": "eth0",
+          "prefsrc": "192.0.2.20",
+          "metric": 100,
+          "protocol": "dhcp",
+          "flags": []
+        },
+        {
+          "dst": "192.0.2.0/24",
+          "dev": "eth0",
+          "prefsrc": "192.0.2.20",
+          "protocol": "kernel",
+          "flags": []
+        }
+      ],
+      "interfaces": [
+        {
+          "name": "eth0",
+          "state": "UP",
+          "type": "ether",
+          "addresses": [
+            "192.0.2.20"
+          ]
+        }
+      ],
+      "dns_servers": [
+        "192.0.2.53"
+      ],
+      "default": "eth0",
+      "error": null
+    },
+    "schema_version": 2
   }
 }

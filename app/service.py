@@ -64,6 +64,7 @@ def apply_config():
             "mode": db.get_setting("mode", "rule"),
             "tun": db.get_setting("tun", "1"),
             "mihomo_secret": db.get_setting("mihomo_secret", ""),
+            "campus_config": db.get_setting("campus_config"),
         }
         text = render_config(subscriptions, groups, cooled, settings, db.list_rules())
         destination = config_path()

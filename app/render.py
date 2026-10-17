@@ -2,6 +2,8 @@ import json
 import re
 from urllib.parse import urlparse
 
+from .campus_config import effective_excludes, effective_filters, effective_policy, load_config
+
 RULE_PROVIDERS = {
     "reject": "https://testingcf.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt",
     "private": "https://testingcf.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt",
@@ -91,6 +93,8 @@ def subscription_hosts(subscriptions):
 
 
 def render_config(subscriptions, groups, cooldown_names, settings, routing_rules=None):
+    campus = load_config(settings.get("campus_config"))
+    campus_dns = [d for d in campus["dns"] if d["enabled"]]
     enabled_subs = [s for s in subscriptions if int(s["enabled"])]
     enabled_groups = [g for g in groups if int(g["enabled"])]
     if routing_rules is None:
@@ -152,21 +156,16 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
         "  ipv6: false",
         "  enhanced-mode: fake-ip",
         "  fake-ip-range: 198.18.0.1/16",
-        "  fake-ip-filter:",
-        "    - '+.lan'",
-        "    - '+.local'",
-        "    - '+.market.xiaomi.com'",
-        "    - auth-6441.wifi.com",
-        "    - '+.littleking.site'",
-        "    - '+.njau.edu.cn'",
+        "  fake-ip-filter:" if effective_filters(campus) else "  fake-ip-filter: []",
+        *(f"    - {q(domain)}" for domain in effective_filters(campus)),
         "  default-nameserver:",
         "    - tls://223.5.5.5",
         "    - tls://223.6.6.6",
         "  nameserver:",
         "    - https://doh.pub/dns-query",
         "    - https://dns.alidns.com/dns-query",
-        "  nameserver-policy:",
-        '    "auth-6441.wifi.com": 10.64.0.134',
+        "  nameserver-policy:" if effective_policy(campus) else "  nameserver-policy: {}",
+        *(f"    {q(domain)}: {server}" for domain, server in effective_policy(campus).items()),
         "tun:",
         f"  enable: {'true' if tun else 'false'}",
         "  stack: mixed",
@@ -177,14 +176,8 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
         "  auto-redirect: false",
         "  auto-detect-interface: true",
         "  strict-route: false",
-        "  route-exclude-address:",
-        "    - 10.0.0.0/8",
-        "    - 127.0.0.0/8",
-        "    - 169.254.0.0/16",
-        "    - 172.16.0.0/12",
-        "    - 192.168.0.0/16",
-        "    - 224.0.0.0/4",
-        "    - 240.0.0.0/4",
+        "  route-exclude-address:" if effective_excludes(campus) else "  route-exclude-address: []",
+        *(f"    - {cidr}" for cidr in effective_excludes(campus)),
         "proxy-providers:",
     ]
     if not enabled_subs:
@@ -296,6 +289,16 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
         ]
 
     lines.append("rules:")
+    # Explicit proxy clients still enter the core. Keep their campus traffic
+    # direct too; TUN clients bypass the core using the exclusions above.
+    for network in campus["networks"]:
+        if network["enabled"] and network.get("direct", True):
+            lines.append(f"- IP-CIDR,{network['cidr']},DIRECT,no-resolve")
+    for item in campus_dns:
+        if not item.get("direct", True):
+            continue
+        lines.extend(domain_rules("DIRECT", item["domain"]) if item["domain"].startswith("+.")
+                     else [f"- DOMAIN,{item['domain']},DIRECT"])
     for host in subscription_hosts(enabled_subs):
         lines.append(f"- DOMAIN,{host},DIRECT")
     lines += [

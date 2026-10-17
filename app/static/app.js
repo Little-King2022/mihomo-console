@@ -13,6 +13,7 @@ import { initClipboard } from './js/ui/clipboard.js';
 import { initHistoryTooltip } from './js/ui/history.js';
 import { initProxyGuide } from './js/features/proxy-guide.js';
 import { refreshPurity } from './js/pages/purity.js';
+import { refreshCampus } from './js/pages/campus.js';
 import { renderLive } from './js/pages/overview.js';
 import { refreshGroupDiagnostics } from './js/features/group-diagnostics.js';
 import { initPolling, poll } from './js/polling.js';
@@ -48,6 +49,7 @@ $('#refresh').onclick = act(async () => {
     renderLive();
   }
   if (state.page === 'purity') await refreshPurity();
+  if (state.page === 'campus') await refreshCampus();
 });
 $('#modes').onclick = async (event) => {
   if (event.target.dataset.mode)

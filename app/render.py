@@ -71,7 +71,7 @@ def cooldown_regex(names):
             cleaned.append(re.escape(name))
     if not cleaned:
         return ""
-    return "^(?:%s)$" % "|".join(cleaned)
+    return "^(?:%s)$" % "|".join(sorted(set(cleaned)))
 
 
 def merge_exclude(base, extra):
@@ -228,7 +228,10 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
             strategy = "fallback"
         selected = group.get("selected_nodes")
         explicit = selected is not None
-        exclude = cooled if explicit else merge_exclude(group.get("exclude_filter") or "", cooled)
+        # The core handles fallback/URL-test health without rebuilding groups.
+        # Reloading on every cooldown change otherwise interrupts live streams.
+        group_cooled = cooled if strategy == "select" else ""
+        exclude = group_cooled if explicit else merge_exclude(group.get("exclude_filter") or "", group_cooled)
         lines += [f"- name: {q(group['name'])}", f"  type: {strategy}"]
         if enabled_subs:
             lines.append("  use:")
@@ -258,7 +261,7 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
                 "  timeout: 5000",
                 "  lazy: false",
                 "  expected-status: 204",
-                "  interrupt-exist-connections: true",
+                "  interrupt-exist-connections: false",
             ]
         # Provider nodes are appended after this list. Keep manual proxies empty
         # so fallback starts with real nodes; a trailing reject group is added later.

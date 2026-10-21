@@ -68,6 +68,10 @@ def apply_config():
         }
         text = render_config(subscriptions, groups, cooled, settings, db.list_rules())
         destination = config_path()
+        # Cooldown bookkeeping can change without changing effective routing.
+        # Preserve live proxy streams when the active configuration is identical.
+        if destination.exists() and destination.read_text(encoding="utf-8") == text and core_active():
+            return {"path": str(destination), "bytes": destination.stat().st_size, "changed": False}
         destination.parent.mkdir(parents=True, exist_ok=True)
         (destination.parent / "providers").mkdir(parents=True, exist_ok=True)
         (destination.parent / "ruleset").mkdir(parents=True, exist_ok=True)
@@ -91,7 +95,7 @@ def apply_config():
             if folder.exists():
                 shutil.chown(folder, user="mihomo", group="mihomo")
         reload_core()
-        return {"path": str(destination), "bytes": destination.stat().st_size}
+        return {"path": str(destination), "bytes": destination.stat().st_size, "changed": True}
 
 
 def core_active():
@@ -247,10 +251,11 @@ def _collect_health():
     db.upsert_node_health(health_rows)
     db.replace_cooldowns(cooled)
     migrate_group_nodes(node_catalog(payload))
+    reloaded = False
     if changed and health_rows:
-        apply_config()
+        reloaded = apply_config().get("changed", True)
     alive = sum(1 for row in health_rows if row["alive"])
-    return {"total": len(health_rows), "alive": alive, "cooldown": len(cooled), "reloaded": changed and bool(health_rows)}
+    return {"total": len(health_rows), "alive": alive, "cooldown": len(cooled), "reloaded": reloaded}
 
 
 def version():

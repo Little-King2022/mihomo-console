@@ -1,22 +1,15 @@
 import json
+import ipaddress
 import re
+import yaml
 from urllib.parse import urlparse
 
 from .campus_config import effective_excludes, effective_filters, effective_policy, load_config
+from . import rulesets
 
-RULE_PROVIDERS = {
-    "reject": "https://testingcf.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt",
-    "private": "https://testingcf.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt",
-    "direct": "https://testingcf.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt",
-    "proxy": "https://testingcf.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt",
-    "lancidr": "https://testingcf.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt",
-    "cncidr": "https://testingcf.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt",
-    "openai": "https://testingcf.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OpenAI/OpenAI.yaml",
-    "claude": "https://testingcf.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Claude/Claude.yaml",
-    "gemini": "https://testingcf.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Gemini/Gemini.yaml",
-}
-
-BASE_RULE_SETS = ("reject", "private", "direct", "proxy", "lancidr", "cncidr")
+# Compatibility exports for consumers of the original public constants.
+RULE_PROVIDERS = rulesets.DEFAULT_URLS
+BASE_RULE_SETS = rulesets.BASE
 
 
 def q(value):
@@ -52,7 +45,7 @@ def domain_rules(group_name, domains_text):
         item = raw.strip()
         if not item or item.startswith("#"):
             continue
-        if item.upper().startswith("DOMAIN,"):
+        if item.upper().startswith(("DOMAIN,", "DOMAIN-SUFFIX,", "DOMAIN-KEYWORD,")):
             rules.append(f"- {item},{group_name}")
             continue
         if item.startswith("+."):
@@ -93,6 +86,7 @@ def subscription_hosts(subscriptions):
 
 
 def render_config(subscriptions, groups, cooldown_names, settings, routing_rules=None):
+    rule_providers = {x['name']: x for x in rulesets.load(settings.get('rulesets'))}
     campus = load_config(settings.get("campus_config"))
     campus_dns = [d for d in campus["dns"] if d["enabled"]]
     enabled_subs = [s for s in subscriptions if int(s["enabled"])]
@@ -165,7 +159,7 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
         "    - https://doh.pub/dns-query",
         "    - https://dns.alidns.com/dns-query",
         "  nameserver-policy:" if effective_policy(campus) else "  nameserver-policy: {}",
-        *(f"    {q(domain)}: {server}" for domain, server in effective_policy(campus).items()),
+        *(f"    {q(domain)}: {json.dumps(server) if isinstance(server, list) else server}" for domain, server in effective_policy(campus).items()),
         "tun:",
         f"  enable: {'true' if tun else 'false'}",
         "  stack: mixed",
@@ -191,10 +185,13 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
             f"    url: {q(sub['url'])}",
             f"    path: ./providers/{name}.yaml",
             f"    interval: {interval}",
+            "    header:",
+            "      User-Agent: [clash.meta]",
+            f"    exclude-filter: {q('(?i)(剩余流量|重置剩余|套餐到期|官网地址|防失联|更新订阅|到期时间|剩余天数)')}",
             "    health-check:",
             "      enable: true",
-            "      url: http://www.gstatic.com/generate_204",
-            "      interval: 60",
+            "      url: https://www.gstatic.com/generate_204",
+            "      interval: 300",
             "      timeout: 5000",
             "      lazy: false",
             "      expected-status: 204",
@@ -203,6 +200,11 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
         ]
         if not prefix_for(sub, len(enabled_subs)):
             lines = lines[:-2]
+        fetch_group = next((g for g in enabled_groups if g.get('id') == sub.get('fetch_group_id')), None)
+        if sub.get('fetch_group_id') and not fetch_group:
+            raise ValueError('订阅下载出口不可用，请先选择启用的代理组')
+        if fetch_group:
+            lines.append(f"    proxy: {q(fetch_group['name'])}")
 
     # Dedicated loopback inbounds let diagnostics use a group's real outbound
     # without temporarily changing its selection, mode, or the user's rules.
@@ -256,8 +258,8 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
             lines.append("  empty-fallback: REJECT")
         if strategy in ("fallback", "url-test"):
             lines += [
-                "  url: http://www.gstatic.com/generate_204",
-                "  interval: 60",
+                "  url: https://www.gstatic.com/generate_204",
+                "  interval: 300",
                 "  timeout: 5000",
                 "  lazy: false",
                 "  expected-status: 204",
@@ -267,29 +269,21 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
         # so fallback starts with real nodes; a trailing reject group is added later.
         lines.append("  proxies: [DIRECT]" if strategy == "select" and not enabled_subs and not explicit else "  proxies: []")
 
-    used_sets = set(BASE_RULE_SETS)
-    for group in matches:
-        for item in (group.get("rule_sets") or "").split(","):
-            item = item.strip()
-            if item in RULE_PROVIDERS:
-                used_sets.add(item)
-    lines.append("rule-providers:")
-    for name in sorted(used_sets):
-        if name in ("lancidr", "cncidr"):
-            behavior = "ipcidr"
-        elif name in ("openai", "claude", "gemini"):
-            behavior = "classical"
-        else:
-            behavior = "domain"
-        lines += [
-            f"  {name}:",
-            "    type: http",
-            "    proxy: DIRECT",
-            f"    behavior: {behavior}",
-            f"    url: {q(RULE_PROVIDERS[name])}",
-            f"    path: ./ruleset/{name}.yaml",
-            "    interval: 86400",
-        ]
+    for match in matches:
+        unknown = set(filter(None, (match.get('rule_sets') or '').split(','))) - rule_providers.keys()
+        if unknown:
+            raise ValueError('分流规则引用了不存在的规则集')
+    if not set(BASE_RULE_SETS).issubset(rule_providers):
+        raise ValueError('缺少基础分流规则集')
+    lines.append('rule-providers:')
+    rendered_providers = {name: rulesets.provider(item, settings.get('rule_provider_paths', {}).get(name))
+                          for name, item in rule_providers.items()}
+    for name, item in rule_providers.items():
+        if item.get('excluded'):
+            rendered_providers['__console_source_' + name] = rulesets.source_provider(item)
+    provider_yaml = yaml.safe_dump(rendered_providers,
+                                   allow_unicode=True, sort_keys=False)
+    lines.extend('  ' + line for line in provider_yaml.rstrip().splitlines())
 
     lines.append("rules:")
     # Explicit proxy clients still enter the core. Keep their campus traffic
@@ -314,7 +308,7 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
     ):
         for rule_set in (group.get("rule_sets") or "").split(","):
             rule_set = rule_set.strip()
-            if rule_set in RULE_PROVIDERS:
+            if rule_set in rule_providers:
                 lines.append(f"- RULE-SET,{rule_set},{group['name']}")
         lines.extend(domain_rules(group["name"], group.get("domains") or ""))
     lines += [
@@ -326,4 +320,54 @@ def render_config(subscriptions, groups, cooldown_names, settings, routing_rules
         "- GEOIP,CN,DIRECT,no-resolve",
         f"- MATCH,{default_name}",
     ]
-    return "\n".join(lines) + "\n"
+    text = "\n".join(lines) + "\n"
+    if settings.get("router_config"):
+        return router_network(text, settings["router_config"], campus, matches, enabled_subs)
+    return text
+
+
+def router_network(text, raw, campus, matches, subscriptions):
+    """Linux router profile: real domestic DNS plus kernel-level CIDR bypass."""
+    from .router_config import clean_config
+    profile = clean_config(json.loads(raw) if isinstance(raw, str) else raw)
+    config = yaml.safe_load(text)
+    config['dns']['listen'] = '127.0.0.1:1053'
+    config['tun'].update(device='Mihomo', mtu=profile['mtu'], **{
+        'auto-route': True, 'auto-redirect': True, 'strict-route': False,
+        'iproute2-table-index': 2022, 'iproute2-rule-index': 9000,
+    })
+    excludes = config['tun']['route-exclude-address']
+    excludes += [r['destination'] for r in profile['routes'] if r['enabled'] and r['bypass']]
+    # The native nft encoder rejects intervals ending at the address-family
+    # maximum. Limited broadcast is already local traffic.
+    broadcast = ipaddress.ip_network('255.255.255.255/32')
+    compiled = []
+    for n in ipaddress.collapse_addresses(ipaddress.ip_network(x) for x in excludes):
+        if broadcast.subnet_of(n):
+            compiled.extend(str(x) for x in n.address_exclude(broadcast))
+        else:
+            compiled.append(str(n))
+    config['tun']['route-exclude-address'] = compiled
+    if profile['domestic_bypass']:
+        # lancidr contains 198.18/15; excluding it would bypass fake-IP proxies.
+        config['tun']['route-exclude-address-set'] = ['cncidr']
+    filters = []
+    for domain in effective_filters(campus):
+        kind = 'DOMAIN-SUFFIX' if domain.startswith(('+.', '*.')) else 'DOMAIN'
+        filters.append(f'{kind},{domain.removeprefix("+.").removeprefix("*.")},real-ip')
+    filters += [f'DOMAIN,{host},real-ip' for host in subscription_hosts(subscriptions)]
+    for group in sorted(matches, key=lambda g: int(g.get('priority', 100))):
+        filters += [r.removeprefix('- ') for r in domain_rules('fake-ip', group.get('domains', ''))]
+        filters += [f'RULE-SET,{s},fake-ip' for s in group.get('rule_sets', '').split(',') if s in config['rule-providers'] and config['rule-providers'][s]['behavior'] != 'ipcidr']
+    filters += ['RULE-SET,reject,fake-ip', 'RULE-SET,private,real-ip']
+    if profile['domestic_bypass']:
+        filters += ['RULE-SET,direct,real-ip']
+    filters += ['RULE-SET,proxy,fake-ip', 'MATCH,real-ip']
+    config['dns'].update({'fake-ip-filter-mode': 'rule', 'fake-ip-filter': filters,
+                          'default-nameserver': profile['host_dns'],
+                          'proxy-server-nameserver': ['https://223.5.5.5/dns-query', 'https://119.29.29.29/dns-query']})
+    config['sniffer']['force-dns-mapping'] = True
+    default_interface = next(u['interface'] for u in profile['uplinks'] if u['default'])
+    for provider in config['proxy-providers'].values():
+        provider.setdefault('override', {})['interface-name'] = default_interface
+    return yaml.safe_dump(config, allow_unicode=True, sort_keys=False)

@@ -125,6 +125,7 @@ function renderPurity() {
     <div class="purity-report-wrap"><div class="purity-query"><span>${e(report?.ip || (pending ? '正在检测所选代理组的出口…' : '检测所选代理组的出口 IP'))}</span><button id="purity-run" class="btn" ${pending ? 'disabled' : ''}>${icon('refresh')}${pending ? '检测中…' : report ? '重新检测' : '开始检测'}</button></div>
     <div class="purity-meta"><span>${e(group.name)}${report ? ` <span class="purity-ip-version">IPv${report.version}</span>` : ''}</span><a href="https://ippure.com/" target="_blank" rel="noreferrer">数据来源 IPPure ↗</a></div>
     ${reportCard(group, snapshot)}
+    ${result?.scope_note ? `<p class="small muted">${e(result.scope_note)}</p>` : ''}
     <div class="purity-provenance" aria-live="polite">${pending ? '正在通过所选代理组查询，请稍候…' : result ? `<span>检测于 ${e(new Date(result.checked_at).toLocaleString('zh-CN', { hour12: false }))}</span><span>出口节点：${e(result.node)}</span>` : '<span>尚未检测 · 点击“开始检测”获取真实报告</span>'}</div>
     </div></div>`;
   container.querySelectorAll('[data-purity-group]').forEach((button) => {

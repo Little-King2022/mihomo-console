@@ -44,7 +44,7 @@ function subForm(sub) {
           type="checkbox"
           ${!sub || sub.enabled ? 'checked' : ''}
         />启用订阅</label
-      >${formActions('save-sub')}`,
+      ><label for="f-fetch-group">订阅下载出口</label><select id="f-fetch-group"><option value="0">系统直连</option>${state.groups.filter((g) => g.enabled).map((g) => `<option value="${g.id}" ${sub?.fetch_group_id === g.id ? 'selected' : ''}>${e(g.name)}</option>`).join('')}</select>${formActions('save-sub')}`,
   );
   $('#cancel').onclick = closeModal;
   $('#save-sub').onclick = act(async () => {
@@ -53,6 +53,7 @@ function subForm(sub) {
       url: $('#f-url').value.trim(),
       interval_hours: Number($('#f-hours').value),
       enabled: $('#f-enabled').checked,
+      fetch_group_id: Number($('#f-fetch-group').value),
     };
     if (!body.name || !/^https?:\/\//.test(body.url) || body.interval_hours < 1)
       throw new Error('请填写名称、有效订阅链接和至少 1 小时的间隔');

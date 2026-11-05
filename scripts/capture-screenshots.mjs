@@ -25,7 +25,8 @@ try {
     if (pathname === '/api/session') return route.fulfill({ status: 204 });
     const endpoints = {
       '/api/overview': demo.overview, '/api/subscriptions': demo.subscriptions,
-      '/api/rules': demo.rules, '/api/groups': demo.groups, '/api/nodes': demo.nodes,
+      '/api/rulesets': demo.rulesets, '/api/rulesets/reject/entries': demo.ruleset_entries,
+      '/api/maintenance': demo.maintenance, '/api/rules': demo.rules, '/api/groups': demo.groups, '/api/nodes': demo.nodes,
       '/api/node-catalog': demo.catalog, '/api/telemetry': demo.telemetry,
       '/api/campus': demo.campus,
     };
@@ -57,37 +58,57 @@ try {
     badge.style.cssText = 'position:fixed;right:18px;bottom:14px;z-index:100;background:#131d31e8;color:#fff;padding:7px 12px;border-radius:8px;font:11px sans-serif;letter-spacing:.6px;pointer-events:none';
     document.body.append(badge);
   });
+  await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(output, 'overview.png'), fullPage: true });
   await page.getByRole('button', { name: '代理组', exact: true }).click();
   await page.locator('[data-domain-group="1"] summary').click();
   await page.mouse.move(1420, 20);
   await page.waitForTimeout(220);
   if ((await page.locator('body').innerText()).includes('undefined')) throw new Error('Incomplete group fixture');
+  await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(output, 'groups.png'), fullPage: true });
   await page.locator('[data-gedit="1"]').click();
   await page.locator('.pick-node').first().waitFor();
+  await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(output, 'node-picker.png') });
   await page.locator('#picker-close').click();
   await page.setViewportSize({ width: 1440, height: 1200 });
   await page.getByRole('button', { name: '节点健康', exact: true }).click();
   await page.locator('.health-bar').first().hover();
   await page.locator('#history-tooltip').waitFor({ state: 'visible' });
+  await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(output, 'health.png') });
   await page.setViewportSize({ width: 1440, height: 1080 });
   await page.getByRole('button', { name: 'IP 纯净度', exact: true }).click();
   await page.locator('#purity-run').click();
   await page.waitForFunction(() => document.querySelector('#purity-ip')?.textContent.includes('203.0.113'));
+  await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(output, 'purity.png'), fullPage: true });
   await page.getByRole('button', { name: '校园网', exact: true }).click();
   await page.locator('#campus-add-network').waitFor();
+  await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(output, 'campus.png'), fullPage: true });
+  await page.getByRole('button', { name: '规则集', exact: true }).click();
+  await page.locator('[data-set-entries="reject"]').waitFor();
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: resolve(output, 'rulesets.png') });
+  await page.locator('[data-set-entries="reject"]').click();
+  await page.locator('[data-entry-restore]').waitFor();
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: resolve(output, 'ruleset-entries.png') });
+  await page.locator('#cancel').click();
+  await page.getByRole('button', { name: '高级', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.maintenance-versions')?.textContent.includes('v1.19.32'));
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: resolve(output, 'advanced.png') });
   await page.getByRole('button', { name: 'IP 纯净度', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 1000 });
-  await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
+  await page.locator('#theme-toggle').click();
+  await page.waitForTimeout(250);
   await page.screenshot({ path: resolve(output, 'mobile.png'), fullPage: true });
   if (errors.length) throw new Error(errors.join('\n'));
   if (externalRequests) throw new Error(`Blocked ${externalRequests} unexpected external requests`);
-  console.log('Captured 7 screenshots from synthetic fixtures; no credentials or external API requests.');
+  console.log('Captured 10 screenshots from synthetic fixtures; no credentials or external API requests.');
 } finally {
   await browser.close();
 }

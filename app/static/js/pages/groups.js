@@ -50,7 +50,7 @@ function renderGroups() {
   );
   $('#page-groups').innerHTML = /* HTML */ `<div class="split page-intro">
       <p class="muted">
-        勾选节点组成出口池，再选择自动回退、自动测速或手动切换。展开分流域名，可查看经过每组的服务。
+        勾选节点组成出口池，可选择一致性哈希负载均衡、自动回退、自动测速或手动切换。负载均衡支持独立灾备池。
       </p>
       <button class="btn primary" id="add-group">＋ 添加代理组</button>
     </div>
@@ -71,8 +71,7 @@ function renderGroups() {
                 ><strong>${e(g.now || '等待内核节点')}</strong>
               </div>
               <p class="small muted">
-                已勾选 ${g.selected_nodes?.length ?? g.all.length} 个节点 · 当前候选 ${g.all.length}
-                个 · ${state.rules.filter((r) => r.group_id === g.id).length} 条分流规则
+                主节点 ${g.selected_nodes?.length ?? g.all.length} 个 · 当前候选 ${g.all.length} 个 · ${state.rules.filter((r) => r.group_id === g.id).length} 条分流规则
               </p>
               <div class="assigned">
                 ${state.rules
@@ -83,7 +82,7 @@ function renderGroups() {
                   )
                   .join('')}
               </div>
-              ${g.strategy === 'select' ? `<label for="select-${g.id}">当前使用节点</label><select id="select-${g.id}" data-select="${g.id}" ${g.enabled ? '' : 'disabled'}>${g.all.map((n) => `<option value="${e(n)}" ${n === g.now ? 'selected' : ''}>${e(n)}</option>`).join('')}</select>` : '<p class="small muted">在勾选的节点中自动选择可用出口。</p>'}${groupRouting(g)}
+              ${g.strategy === 'select' ? `<label for="select-${g.id}">当前使用节点</label><select id="select-${g.id}" data-select="${g.id}" ${g.enabled ? '' : 'disabled'}>${g.all.map((n) => `<option value="${e(n)}" ${n === g.now ? 'selected' : ''}>${e(n)}</option>`).join('')}</select>` : `<p class="small muted">在勾选的节点中自动选择可用出口。</p>`}${groupRouting(g)}
               <div class="actions">
                 <button class="btn primary" data-gedit="${g.id}">
                   ${icon('layers')} 选择节点与编辑</button

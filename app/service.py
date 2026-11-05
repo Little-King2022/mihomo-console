@@ -1,4 +1,3 @@
-import gzip
 import fcntl
 import logging
 import os
@@ -9,16 +8,16 @@ import subprocess
 import threading
 import time
 from collections import deque
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
 
-from . import db
+from . import db, router, rulesets
 from .mihomo import binary_path, client, config_dir, config_path
-from .render import render_config, prefix_for, provider_name, RULE_PROVIDERS
+from .render import render_config, prefix_for, provider_name
 
 log = logging.getLogger("mihomo-console")
 _apply_lock_import = threading.RLock()
@@ -65,19 +64,32 @@ def apply_config():
             "tun": db.get_setting("tun", "1"),
             "mihomo_secret": db.get_setting("mihomo_secret", ""),
             "campus_config": db.get_setting("campus_config"),
+            "router_config": db.get_setting("router_config"),
+            "rulesets": db.get_setting("rulesets"),
         }
+        settings['rule_provider_paths'] = rulesets.prepare_overrides(rulesets.load(settings['rulesets']), config_dir())
         text = render_config(subscriptions, groups, cooled, settings, db.list_rules())
         destination = config_path()
         # Cooldown bookkeeping can change without changing effective routing.
         # Preserve live proxy streams when the active configuration is identical.
         if destination.exists() and destination.read_text(encoding="utf-8") == text and core_active():
+            # NAT/DHCP edits may leave core YAML unchanged. Still apply owned
+            # network resources while preserving the running proxy connections.
+            profile = router.configured()
+            if profile:
+                with router.system_transaction(profile, router.load_config(settings['campus_config'])):
+                    pass
             return {"path": str(destination), "bytes": destination.stat().st_size, "changed": False}
         destination.parent.mkdir(parents=True, exist_ok=True)
         (destination.parent / "providers").mkdir(parents=True, exist_ok=True)
         (destination.parent / "ruleset").mkdir(parents=True, exist_ok=True)
         temporary = destination.with_suffix(".yaml.tmp")
         temporary.write_text(text, encoding="utf-8")
+        os.chmod(temporary, 0o600)
         binary = binary_path()
+        if settings['router_config'] and not binary.exists():
+            temporary.unlink(missing_ok=True)
+            raise RuntimeError('Mihomo 内核不存在，拒绝应用路由器配置')
         if binary.exists():
             check = subprocess.run(
                 [str(binary), "-t", "-d", str(config_dir()), "-f", str(temporary)],
@@ -85,34 +97,71 @@ def apply_config():
                 text=True,
             )
             if check.returncode != 0:
-                detail = (check.stdout + "\n" + check.stderr).strip()
                 temporary.unlink(missing_ok=True)
-                raise RuntimeError(detail or "mihomo 配置校验失败")
-        os.replace(temporary, destination)
-        shutil.chown(destination, user="mihomo", group="mihomo")
-        os.chmod(destination, 0o664)
-        for folder in (destination.parent, destination.parent / "providers", destination.parent / "ruleset"):
-            if folder.exists():
-                shutil.chown(folder, user="mihomo", group="mihomo")
-        reload_core()
+                raise RuntimeError("Mihomo 配置自检失败，原配置已保留")
+        previous = destination.read_bytes() if destination.exists() else None
+        profile = router.configured()
+        system = router.system_transaction(profile, router.load_config(settings['campus_config'])) if profile else nullcontext()
+        try:
+            with system:
+                os.replace(temporary, destination)
+                shutil.chown(destination, user="mihomo", group="mihomo")
+                os.chmod(destination, 0o640)
+                for folder in (destination.parent, destination.parent / "providers", destination.parent / "ruleset"):
+                    if folder.exists():
+                        shutil.chown(folder, user="mihomo", group="mihomo")
+                reload_core()
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            if previous is not None:
+                destination.write_bytes(previous)
+                try:
+                    reload_core()
+                except Exception:
+                    log.error('旧内核配置重载失败，请使用本机备份恢复')
+            else:
+                destination.unlink(missing_ok=True)
+            raise
         return {"path": str(destination), "bytes": destination.stat().st_size, "changed": True}
 
 
+def refresh_rule_overrides():
+    """Raw providers auto-update in Mihomo; publish changed filtered snapshots."""
+    with config_lock():
+        items = rulesets.load(db.get_setting('rulesets'))
+        if not any(x.get('excluded') for x in items):
+            return
+        paths = rulesets.prepare_overrides(items, config_dir())
+        current = yaml.safe_load(config_path().read_text()).get('rule-providers', {})
+        if any(current.get(name, {}).get('path') != path for name, path in paths.items()):
+            apply_config()
+
+
 def core_active():
+    if os.environ.get('MIHOMO_OFFLINE') == '1':
+        return False
     active = subprocess.run(["systemctl", "is-active", "mihomo"], capture_output=True, text=True)
     return active.stdout.strip() == "active"
 
 
 def reload_core():
     if core_active():
-        subprocess.run(["systemctl", "reload", "mihomo"], check=False)
+        with client() as http:
+            response = http.put('/configs?force=true', json={'path': str(config_path())})
+            response.raise_for_status()
+            if router.configured():
+                runtime = http.get('/configs')
+                runtime.raise_for_status()
+                if bool(runtime.json().get('tun', {}).get('enable')) != (db.get_setting('tun', '1') == '1'):
+                    raise RuntimeError('TUN 实际状态与配置不一致，已拒绝确认应用')
+                router.verify_domestic_bypass()
 
 
 def set_mode(mode):
     if mode not in ("rule", "global", "direct"):
         raise ValueError("mode 必须是 rule、global 或 direct")
-    db.set_setting("mode", mode)
-    apply_config()
+    with config_change():
+        db.set_setting("mode", mode)
     if not core_active():
         return
     try:
@@ -251,9 +300,16 @@ def _collect_health():
     db.upsert_node_health(health_rows)
     db.replace_cooldowns(cooled)
     migrate_group_nodes(node_catalog(payload))
+    # Only manual selections need cooldowns compiled into their filters.
+    # Native fallback/url-test handle failed probes without rebuilding TUN.
+    reload_needed = changed and bool(health_rows) and any(
+        g.get("strategy") == "select" and g.get("enabled") for g in db.list_groups()
+    )
     reloaded = False
-    if changed and health_rows:
+    if reload_needed:
         reloaded = apply_config().get("changed", True)
+    if db.get_setting('router_config'):
+        router.verify_domestic_bypass()
     alive = sum(1 for row in health_rows if row["alive"])
     return {"total": len(health_rows), "alive": alive, "cooldown": len(cooled), "reloaded": reloaded}
 
@@ -273,56 +329,6 @@ def version():
         return line[0] if line else "未知"
 
 
-def latest_release():
-    with httpx.Client(timeout=30, follow_redirects=True) as http:
-        response = http.get(
-            "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest",
-            headers={"Accept": "application/vnd.github+json", "User-Agent": "mihomo-console"},
-        )
-        response.raise_for_status()
-        return response.json()
-
-
-def upgrade_kernel():
-    release = latest_release()
-    tag = release.get("tag_name") or ""
-    asset = None
-    for item in release.get("assets") or []:
-        name = item.get("name") or ""
-        if name == f"mihomo-linux-amd64-{tag}.gz":
-            asset = item
-            break
-    if asset is None:
-        raise RuntimeError(f"发布 {tag} 中没有 linux amd64 内核包")
-    current = version()
-    if tag.lstrip("v") and tag.lstrip("v") in current:
-        return {"changed": False, "version": current, "latest": tag}
-    destination = binary_path()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    archive = destination.with_suffix(".gz.download")
-    with httpx.Client(timeout=120, follow_redirects=True) as http:
-        downloaded = http.get(asset["browser_download_url"], headers={"User-Agent": "mihomo-console"})
-        downloaded.raise_for_status()
-        archive.write_bytes(downloaded.content)
-    raw = gzip.decompress(archive.read_bytes())
-    staged = destination.with_suffix(".new")
-    staged.write_bytes(raw)
-    os.chmod(staged, 0o755)
-    check = subprocess.run([str(staged), "-v"], capture_output=True, text=True)
-    if check.returncode != 0:
-        raise RuntimeError((check.stdout + check.stderr).strip() or "新内核无法运行")
-    subprocess.run(["systemctl", "stop", "mihomo"], check=False)
-    if destination.exists():
-        shutil.copy2(destination, destination.with_name("mihomo.bak"))
-    os.replace(staged, destination)
-    os.chmod(destination, 0o755)
-    shutil.chown(destination, user="root", group="root")
-    archive.unlink(missing_ok=True)
-    start = subprocess.run(["systemctl", "start", "mihomo"], capture_output=True, text=True)
-    if start.returncode != 0:
-        raise RuntimeError(start.stderr.strip() or "内核已替换，但服务启动失败")
-    return {"changed": True, "version": tag, "previous": current}
-
 
 @contextmanager
 def config_change():
@@ -330,6 +336,13 @@ def config_change():
     with config_lock(), db.transaction():
         yield
         apply_config()
+
+
+def migrate_load_balance():
+    with config_lock():
+        if any(g['strategy'] == 'load-balance' for g in db.list_groups()):
+            with config_change():
+                db.migrate_load_balance()
 
 
 def group_status():
@@ -480,13 +493,13 @@ def migrate_group_nodes(catalog=None):
 
 def group_routing_details():
     sets = {}
+    providers = {x['name']: x for x in rulesets.load(db.get_setting('rulesets'))}
     for rule in db.list_rules():
         for name in (rule.get("rule_sets") or "").split(","):
-            if name not in RULE_PROVIDERS or name in sets:
+            if name not in providers or name in sets:
                 continue
             try:
-                payload = yaml.safe_load((config_dir() / "ruleset" / f"{name}.yaml").read_text())
-                sets[name] = payload.get("payload", [])
+                sets[name] = rulesets.read_payload(providers[name], config_dir())
             except (OSError, ValueError, AttributeError, yaml.YAMLError):
                 sets[name] = None
     grouped = {}
@@ -498,7 +511,7 @@ def group_routing_details():
                 return
             if "," in raw:
                 fields = raw.split(",")
-                if fields[0].upper() not in ("DOMAIN", "DOMAIN-SUFFIX") or len(fields) < 2:
+                if fields[0].upper() not in ("DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD") or len(fields) < 2:
                     return
                 kind, value = fields[0].upper(), fields[1]
             else:

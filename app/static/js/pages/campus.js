@@ -56,7 +56,7 @@ export function renderCampus() {
   }
   if (!probeInitialized) {
     const dns = c.dns.find((d) => d.enabled && d.server);
-    probe.target = dns?.server || '';
+    probe.target = dns?.server.split(/\s+/)[0] || '';
     probe.domain = dns?.domain.replace(/^\+\./, '') || '';
     probeInitialized = true;
   }
@@ -77,7 +77,7 @@ export function renderCampus() {
       ${probe.kind === 'dns' ? `<div><label for="campus-domain">具体域名</label><input id="campus-domain" value="${e(probe.domain)}" required></div>` : ''}
       <button class="btn primary" type="submit" ${checking ? 'disabled aria-busy="true"' : ''}>${checking ? '正在检查…' : '开始检查'}</button></form>
       <div id="campus-probe-result">${diagnosticResult()}</div></section>
-    <section class="panel"><div class="panel-head"><div><h2>系统网卡与路由</h2><p>展示当前系统主路由表。网关和本机地址由系统网络管理器维护，页面管理上述 TUN 绕过规则。</p></div><button class="btn" id="campus-status-refresh">刷新状态</button></div>
+    <section class="panel"><div class="panel-head"><div><h2>系统网卡与路由</h2><p>展示当前系统主路由表。系统路由、DHCP 和 NAT 在“路由器”页面统一管理。</p></div><button class="btn" id="campus-status-refresh">刷新状态</button></div>
     ${system.error ? `<p class="err">${e(system.error)}</p>` : ''}
     <div class="campus-tags">${physical.map((i) => `<span class="tag ${i.state === 'UP' ? 'ok' : ''}">${e(i.name)} · ${e(i.addresses.join(', ') || '未分配 IPv4')} · ${e(i.state)}</span>`).join('')}</div>
     <p class="muted small">系统下发 DNS：${e(system.dns_servers.join(' · ') || '未读取到')} · 默认网卡：${e(system.default || '未知')}</p>
@@ -136,7 +136,7 @@ function entryForm(kind, entry) {
   const network = kind === 'networks';
   openModal(`<h2 id="dialog-title">${entry ? '编辑' : '新增'}${network ? 'TUN 排除网段' : '真实 IP 解析例外'}</h2>
     <label for="campus-name">名称</label><input id="campus-name" maxlength="80" value="${e(entry?.name || '')}" placeholder="例如：图书馆资源">
-    ${network ? `<label for="campus-cidr">IPv4 地址或 CIDR 网段</label><input id="campus-cidr" value="${e(entry?.cidr || '')}" placeholder="192.0.2.0/24"><p class="muted small">填写学校提供的真实网段。保存后绕过 TUN，沿用系统出口；删除或停用后不再排除此网段；其他重叠的启用条目仍会生效。</p>` : `<label for="campus-dns-domain">域名</label><input id="campus-dns-domain" value="${e(entry?.domain || '')}" placeholder="+.example.edu.cn"><label for="campus-server">DNS 服务器 IPv4（可选）</label><input id="campus-server" value="${e(entry?.server || '')}" placeholder="留空使用默认解析器"><p class="muted small">+. 前缀包含子域名；域名使用真实 IP 解析。指定 DNS 服务器时，该服务器会自动排除 TUN。</p>`}
+    ${network ? `<label for="campus-cidr">IPv4 地址或 CIDR 网段</label><input id="campus-cidr" value="${e(entry?.cidr || '')}" placeholder="192.0.2.0/24"><p class="muted small">填写学校提供的真实网段。保存后绕过 TUN，沿用系统出口；删除或停用后不再排除此网段；其他重叠的启用条目仍会生效。</p>` : `<label for="campus-dns-domain">域名</label><input id="campus-dns-domain" value="${e(entry?.domain || '')}" placeholder="+.example.edu.cn"><label for="campus-server">DNS 服务器 IPv4（多个用空格分隔）</label><input id="campus-server" value="${e(entry?.server || '')}" placeholder="留空使用默认解析器"><p class="muted small">+. 前缀包含子域名；域名使用真实 IP 解析。指定 DNS 服务器时，该服务器会自动排除 TUN。</p>`}
     <label class="check"><input id="campus-direct" type="checkbox" ${entry?.direct !== false ? 'checked' : ''}>同时为此${network ? '网段' : '域名'}启用直连规则（含显式代理流量）</label>
     <label class="check"><input id="campus-enabled" type="checkbox" ${!entry || entry.enabled ? 'checked' : ''}>启用此条目</label>
     ${formActions('campus-save')}`);

@@ -79,13 +79,16 @@ def clean_entry(kind, payload, entries, entry_id=None):
         raw_server = str(payload.get("server") or "").strip()
         server = ""
         if raw_server:
-            try:
-                address = ipaddress.IPv4Address(raw_server)
-            except ValueError as exc:
-                raise ValueError("DNS 服务器须填写 IPv4 地址，留空使用默认解析器") from exc
-            if address.is_loopback or address.is_unspecified or address.is_multicast or address.is_reserved or address.is_link_local or address in ipaddress.ip_network("198.18.0.0/15"):
-                raise ValueError("DNS 服务器不能是回环、Fake IP 或保留地址")
-            server = str(address)
+            servers = []
+            for part in raw_server.replace(',', ' ').split():
+                try:
+                    address = ipaddress.IPv4Address(part)
+                except ValueError as exc:
+                    raise ValueError("DNS 服务器须填写 IPv4 地址，多个地址用空格分隔") from exc
+                if address.is_loopback or address.is_unspecified or address.is_multicast or address.is_reserved or address.is_link_local or address in ipaddress.ip_network("198.18.0.0/15"):
+                    raise ValueError("DNS 服务器不能是回环、Fake IP 或保留地址")
+                servers.append(str(address))
+            server = ' '.join(dict.fromkeys(servers))
         result.update(domain=domain, server=server)
         key = "domain"
     if any(e["id"] != entry_id and e[key] == result[key] for e in entries):
@@ -100,9 +103,10 @@ def effective_excludes(config):
     # DNS hosts need an exclusion only when no enabled network already covers them.
     for item in config["dns"]:
         if item["enabled"] and item.get("server"):
-            address = ipaddress.ip_address(item["server"])
-            if not any(address in ipaddress.ip_network(n) for n in networks):
-                networks.append(str(address) + "/32")
+            for server in item['server'].split():
+                address = ipaddress.ip_address(server)
+                if not any(address in ipaddress.ip_network(n) for n in networks):
+                    networks.append(str(address) + "/32")
     return networks
 
 
@@ -111,4 +115,5 @@ def effective_filters(config):
 
 
 def effective_policy(config):
-    return {d["domain"]: d["server"] for d in config["dns"] if d["enabled"] and d.get("server")}
+    return {d["domain"]: (d['server'].split() if len(d['server'].split()) > 1 else d['server'])
+            for d in config["dns"] if d["enabled"] and d.get("server")}

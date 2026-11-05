@@ -1,0 +1,17 @@
+[Unit]
+Description=Restore Mihomo Console router configuration
+Wants=network-online.target
+After=network-online.target NetworkManager.service dnsmasq.service netfilter-persistent.service
+Before=mihomo.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/mihomo-console
+Environment=DATA_DIR=/opt/mihomo-console/data
+Environment=MIHOMO_HOME=/opt/mihomo
+Environment=ROUTER_MANAGEMENT=1
+ExecStart=/opt/mihomo-console/.venv/bin/python -m app.network_boot
+
+[Install]
+WantedBy=multi-user.target

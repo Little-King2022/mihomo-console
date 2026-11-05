@@ -4,6 +4,7 @@ const state = {
   overview: null,
   subs: [],
   rules: [],
+  rulesets: [],
   groups: [],
   nodes: [],
   campus: null,

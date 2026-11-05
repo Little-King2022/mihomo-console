@@ -124,11 +124,11 @@ function ruleForm(rule, template = 'custom') {
         >域名，每行一个（包含其子域名）</label
       ><textarea id="r-domains" placeholder="example.com">${e(r.domains)}</textarea>
       <p class="small muted">
-        如需只匹配完整域名，填写 DOMAIN,example.com。AI 与 Google 重叠的域名由更小的优先级先匹配。
+        完整域名可填 DOMAIN,example.com，关键词可填 DOMAIN-KEYWORD,claude。优先级越小越先匹配。
       </p>
       <label>补充规则集</label>
       <div class="row">
-        ${['openai', 'claude', 'gemini'].map((n) => `<label class="check"><input data-rset value="${n}" type="checkbox" ${sets.has(n) ? 'checked' : ''}>${n}</label>`).join('')}
+        ${state.rulesets.map(({name}) => `<label class="check"><input data-rset value="${e(name)}" type="checkbox" ${sets.has(name) ? 'checked' : ''}>${e(name)}</label>`).join('')}
       </div>
       <label for="r-group">出口代理组</label
       ><select id="r-group">

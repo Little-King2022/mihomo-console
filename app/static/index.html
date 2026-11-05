@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#f5f7fb">
   <title>Mihomo · 网络控制台</title>
   <script>try { document.documentElement.dataset.theme = localStorage.getItem('mihomo-theme') || 'light'; } catch {}</script>
-  <link rel="stylesheet" href="/static/app.css?v=20261017-ip-purity">
+  <link rel="stylesheet" href="/static/app.css?v=20261105-maintenance-layout">
 </head>
 <body>
   <div id="login" class="login hidden">
@@ -22,29 +22,39 @@
   <div id="shell" class="app hidden">
     <aside class="side">
       <a class="brand" href="#overview" data-brand aria-label="Mihomo 概览"></a>
-      <div class="nav-label">工作空间</div>
       <nav aria-label="主要导航">
         <button data-page="overview" class="active"><span data-icon="overview"></span>概览<span class="nav-indicator"></span></button>
         <button data-page="subs"><span data-icon="layers"></span>订阅</button>
         <button data-page="rules"><span data-icon="route"></span>分流规则</button>
         <button data-page="groups"><span data-icon="globe"></span>代理组</button>
+        <button data-page="rulesets"><span data-icon="route"></span>规则集</button>
         <button data-page="nodes"><span data-icon="pulse"></span>节点健康</button>
         <button data-page="purity"><span data-icon="shield"></span>IP 纯净度</button>
         <button data-page="campus"><span data-icon="route"></span>校园网</button>
+        <button data-page="router"><span data-icon="route"></span>路由器</button>
+        <button data-page="diagnostics"><span data-icon="pulse"></span>分流诊断</button>
         <button data-page="advanced"><span data-icon="settings"></span>高级</button>
       </nav>
-      <div class="side-tip"><span data-icon="route"></span><strong>为每次连接，选对出口。</strong><p>简单的分流，让常用服务<br>各走各的好线路。</p></div>
+      <section id="sidebar-traffic" class="sidebar-traffic" aria-label="实时上下行流量"><div class="sidebar-traffic-heading"><span>实时流量</span><span id="sidebar-traffic-status">等待采样</span></div><div id="sidebar-traffic-chart"></div><div id="sidebar-traffic-rates" class="sidebar-traffic-rates"></div></section>
+      <a id="panel-link" class="sidebar-panel" href="/ui/" target="_blank" rel="noreferrer" aria-label="打开 MetaCube XD 面板"><span data-icon="overview"></span><span>MetaCube XD<span class="panel-link-hint">打开控制面板 ↗</span></span></a>
       <div class="side-foot"><div class="core-mark"><span data-icon="cpu"></span><div><strong>Mihomo Core</strong><div id="kernel-version" class="small muted"></div></div></div><span class="status-dot"></span></div>
     </aside>
-    <main>
-      <header class="top"><div class="breadcrumb">工作空间 <span>/</span> <span id="breadcrumb-page">概览</span></div><div class="row top-actions"><button class="icon-btn" id="theme-toggle" aria-label="切换深色主题" title="切换主题"></button><button class="icon-btn" id="refresh" aria-label="刷新数据" title="刷新数据"><span data-icon="refresh"></span></button><span class="top-divider"></span><button class="btn subtle" id="logout"><span data-icon="logout"></span>退出</button></div></header>
-      <div class="page-heading"><div><div class="eyebrow" id="page-eyebrow">NETWORK OVERVIEW</div><h1 id="title">网络概览<span class="heading-dot">.</span></h1><p id="page-description" class="muted">每一次连接，都有迹可循。</p></div><div class="heading-controls"><div class="segment" id="modes" aria-label="代理模式"><button data-mode="rule">规则</button><button data-mode="global">全局</button><button data-mode="direct">直连</button></div><button class="btn tun-btn" id="tun">TUN</button></div></div>
-      <section id="page-overview"></section><section id="page-subs" class="hidden"></section><section id="page-rules" class="hidden"></section><section id="page-groups" class="hidden"></section><section id="page-nodes" class="hidden"></section><section id="page-purity" class="hidden"></section><section id="page-campus" class="hidden"></section><section id="page-advanced" class="hidden"></section>
+    <main class="workspace-main">
+      <header class="top">
+        <h1 id="title">概览</h1>
+        <div class="header-controls"><div class="segment" id="modes" role="group" aria-label="代理模式"><button data-mode="rule">规则</button><button data-mode="global">全局</button><button data-mode="direct">直连</button></div><button class="btn tun-btn" id="tun" role="switch" aria-checked="false">TUN</button></div>
+        <div class="row top-actions"><button class="icon-btn" id="theme-toggle" aria-label="切换深色主题" title="切换主题"></button><button class="icon-btn" id="refresh" aria-label="刷新数据" title="刷新数据"><span data-icon="refresh"></span></button><span class="top-divider"></span><button class="btn subtle" id="logout" aria-label="退出登录"><span data-icon="logout"></span><span class="logout-label">退出</span></button></div>
+      </header>
+      <div id="workspace-content" class="workspace-content" role="region" aria-labelledby="title" tabindex="0">
+      <section id="page-overview"></section><section id="page-subs" class="hidden"></section><section id="page-rules" class="hidden"></section><section id="page-groups" class="hidden"></section><section id="page-nodes" class="hidden"></section><section id="page-purity" class="hidden"></section><section id="page-campus" class="hidden"></section><section id="page-router" class="hidden"></section><section id="page-advanced" class="hidden"></section>
+      <section id="page-diagnostics" class="hidden"></section>
+      <section id="page-rulesets" class="hidden"></section>
       <footer class="workspace-footer"><span>Mihomo Console</span><span>让网络回归简单 <span aria-hidden="true">↗</span></span></footer>
+      </div>
     </main>
   </div>
   <div id="history-tooltip" class="history-tooltip hidden" role="tooltip"></div>
   <div id="notice" role="status" aria-live="polite" class="notice hidden"></div><div id="modal" class="modal hidden"></div>
-  <script type="module" src="/static/app.js?v=20261017-ip-purity"></script>
+  <script type="module" src="/static/app.js?v=20261105-maintenance-layout"></script>
 </body>
 </html>

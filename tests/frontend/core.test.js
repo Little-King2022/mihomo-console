@@ -32,6 +32,7 @@ test('concurrent refresh callers await one complete snapshot', async (t) => {
     '/api/overview': { version: 'test' },
     '/api/subscriptions': [{ id: 1 }],
     '/api/rules': [{ id: 2 }],
+    '/api/rulesets': [{ name: 'example' }],
     '/api/groups': [{ id: 3 }],
     '/api/nodes': [{ node_name: 'A' }],
   };
@@ -50,7 +51,7 @@ test('concurrent refresh callers await one complete snapshot', async (t) => {
   const first = loadAll();
   const second = loadAll();
   assert.equal(first, second);
-  assert.equal(fetch.mock.callCount(), 5);
+  assert.equal(fetch.mock.callCount(), 6);
   assert.equal(observed, 0);
   unlock();
   await Promise.all([first, second]);

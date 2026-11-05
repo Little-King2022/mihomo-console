@@ -3874,24 +3874,24 @@
       },
       {
         "id": "legacy-dns-3",
-        "name": "auth-6441.wifi.com",
-        "domain": "auth-6441.wifi.com",
+        "name": "auth.campus.example.org",
+        "domain": "auth.campus.example.org",
         "enabled": true,
         "direct": false,
-        "server": "10.64.0.134"
+        "server": "10.23.0.53"
       },
       {
         "id": "legacy-dns-4",
-        "name": "+.littleking.site",
-        "domain": "+.littleking.site",
+        "name": "+.example.net",
+        "domain": "+.example.net",
         "enabled": true,
         "direct": false,
         "server": ""
       },
       {
         "id": "legacy-dns-5",
-        "name": "+.njau.edu.cn",
-        "domain": "+.njau.edu.cn",
+        "name": "+.campus.example.org",
+        "domain": "+.campus.example.org",
         "enabled": true,
         "direct": false,
         "server": ""
@@ -3954,5 +3954,127 @@
       "error": null
     },
     "schema_version": 2
+  },
+  "rulesets": [
+    {
+      "name": "reject",
+      "type": "http",
+      "behavior": "domain",
+      "format": "yaml",
+      "url": "https://rules.example.com/reject.yaml",
+      "interval": 86400,
+      "payload": [],
+      "excluded": [
+        "+.ads.example.com"
+      ],
+      "references": [
+        "基础分流 / DNS / TUN"
+      ],
+      "protected": true
+    },
+    {
+      "name": "openai",
+      "type": "http",
+      "behavior": "classical",
+      "format": "yaml",
+      "url": "https://rules.example.com/openai.yaml",
+      "interval": 86400,
+      "payload": [],
+      "excluded": [],
+      "references": [
+        "分流规则：AI 服务"
+      ],
+      "protected": false
+    },
+    {
+      "name": "claude",
+      "type": "http",
+      "behavior": "classical",
+      "format": "yaml",
+      "url": "https://rules.example.com/claude.yaml",
+      "interval": 86400,
+      "payload": [],
+      "excluded": [],
+      "references": [
+        "分流规则：AI 服务"
+      ],
+      "protected": false
+    },
+    {
+      "name": "gemini",
+      "type": "http",
+      "behavior": "classical",
+      "format": "yaml",
+      "url": "https://rules.example.com/gemini.yaml",
+      "interval": 86400,
+      "payload": [],
+      "excluded": [],
+      "references": [
+        "分流规则：AI 服务"
+      ],
+      "protected": false
+    },
+    {
+      "name": "example-domains",
+      "type": "inline",
+      "behavior": "domain",
+      "format": "yaml",
+      "url": "",
+      "interval": 86400,
+      "payload": [
+        "+.example.com",
+        "+.example.net"
+      ],
+      "excluded": [],
+      "references": [],
+      "protected": false
+    }
+  ],
+  "ruleset_entries": {
+    "name": "reject",
+    "type": "http",
+    "total": 4,
+    "matched": 4,
+    "page": 1,
+    "page_size": 100,
+    "entries": [
+      "+.tracker.example.com",
+      "+.metrics.example.net",
+      "+.telemetry.example.org",
+      "+.adserver.example.com"
+    ],
+    "excluded": [
+      "+.ads.example.com"
+    ]
+  },
+  "maintenance": {
+    "components": {
+      "kernel": {
+        "installed": true,
+        "version": "v1.19.32",
+        "latest": "v1.19.33",
+        "checked_at": "2026-11-05T02:00:00+00:00",
+        "release_url": "https://github.com/MetaCubeX/mihomo/releases",
+        "update_available": true,
+        "rollback_available": true,
+        "rollback_version": "v1.19.31"
+      },
+      "panel": {
+        "installed": true,
+        "version": "v1.274.3",
+        "latest": "v1.274.4",
+        "checked_at": "2026-11-05T02:00:00+00:00",
+        "release_url": "https://github.com/MetaCubeX/metacubexd/releases",
+        "update_available": true,
+        "rollback_available": true,
+        "rollback_version": "v1.274.2"
+      }
+    },
+    "job": {
+      "kind": "panel",
+      "action": "upgrade",
+      "state": "success",
+      "message": "上一次升级已完成（演示）"
+    }
   }
 }

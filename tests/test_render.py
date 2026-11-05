@@ -10,6 +10,14 @@ from app.render import render_config
 
 
 class RenderTest(unittest.TestCase):
+    def test_automatic_membership_stays_stable_during_cooldowns(self):
+        subscriptions = [dict(id=1, enabled=1, url='https://example.com/sub')]
+        for strategy in ('fallback', 'url-test'):
+            group = dict(id=1, name='Auto', enabled=1, is_default=1,
+                         strategy=strategy, selected_nodes=[dict(provider='sub1', name='A')])
+            self.assertEqual(render_config(subscriptions, [group], [], {}, []),
+                             render_config(subscriptions, [group], ['A'], {}, []))
+
     def test_seed_config_contains_ai_and_regular_groups(self):
         init_db()
         if not list_subscriptions():

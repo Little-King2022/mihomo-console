@@ -28,7 +28,7 @@ function footer(record, group) {
   if (record?.pending) return '<span class="diagnostic-working">正在通过此代理组检测…</span>';
   const result = record?.data;
   const changed = result && (result.node_changed || (group.now && result.node !== group.now));
-  return `<span>${e(result ? timeLabel(result) : '点击刷新开始检测')}</span>${result ? `<span class="diagnostic-node" title="检测时的出口节点">${e(result.node)}</span>${changed ? '<span class="diagnostic-warning">出口已发生变化，请手动刷新确认</span>' : ''}` : ''}`;
+  return `<span>${e(result ? timeLabel(result) : '点击刷新开始检测')}</span>${result ? `<span class="diagnostic-node" title="检测时的出口分配方式">${e(result.node)}</span>${result.scope_note ? `<span>${e(result.scope_note)}</span>` : ''}${changed ? '<span class="diagnostic-warning">出口已发生变化，请手动刷新确认</span>' : ''}` : ''}`;
 }
 
 function ipPanel(group) {

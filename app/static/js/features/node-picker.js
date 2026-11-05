@@ -14,6 +14,13 @@ const strategies = {
   select: '手动选择节点',
 };
 
+const regionNames = { HK: '香港', TW: '台湾', SG: '新加坡', JP: '日本', US: '美国' };
+export function nodeRegion(name) {
+  name = name.toLowerCase();
+  const words = { HK: ['香港', 'hong kong', '🇭🇰'], TW: ['台湾', '台灣', 'taiwan', '🇹🇼'], SG: ['新加坡', 'singapore', '🇸🇬'], JP: ['日本', 'japan', '🇯🇵'], US: ['美国', '美國', 'united states', '🇺🇸', '🇺🇲'] };
+  return Object.keys(words).find(code => words[code].some(word => name.includes(word)));
+}
+
 const nodeKey = (node) => JSON.stringify([node.provider, node.name]);
 
 const subscriptionInfoNode = (node) =>
@@ -64,7 +71,7 @@ async function groupForm(group) {
         Number(selected.has(nodeKey(b))) - Number(selected.has(nodeKey(a))) ||
         Number(!!a.informational) - Number(!!b.informational),
     );
-    groupDraft = { selected, nodes, search: '', provider: '', status: 'all' };
+    groupDraft = { selected, region: '', nodes, search: '', provider: '', status: 'all' };
     dialog.innerHTML = /* HTML */ `<div class="picker-heading">
         <div>
           <span class="eyebrow">PROXY GROUP</span>
@@ -121,7 +128,7 @@ async function groupForm(group) {
         /><select id="picker-provider" aria-label="按订阅筛选节点">
           <option value="">全部订阅</option>
           ${[...new Map(groupDraft.nodes.map((n) => [n.provider, n.subscription])).entries()].map(([id, name]) => `<option value="${e(id)}">${e(name)}</option>`).join('')}</select
-        ><select id="picker-status" aria-label="按节点状态筛选">
+        ><select id="picker-region" aria-label="按节点地区筛选"><option value="">全部地区</option>${Object.entries(regionNames).map(([code,label]) => `<option value="${code}">${label}</option>`).join('')}</select><select id="picker-status" aria-label="按节点状态筛选">
           <option value="all">全部节点</option>
           <option value="selected">只看已选</option>
           <option value="alive">测速可用</option>
@@ -155,6 +162,7 @@ async function groupForm(group) {
       groupDraft.status = event.target.value;
       renderNodePicker();
     };
+    $('#picker-region').onchange = event => { groupDraft.region = event.target.value; renderNodePicker(); };
     $('#picker-select-visible').onclick = () => {
       visiblePickerNodes()
         .filter((n) => n.available)
@@ -211,7 +219,7 @@ async function groupForm(group) {
 function visiblePickerNodes() {
   return groupDraft.nodes.filter((n) => {
     const selected = groupDraft.selected.has(nodeKey(n));
-    return (
+    return ((!groupDraft.region || nodeRegion(n.name) === groupDraft.region) &&
       (n.node_name + ' ' + n.subscription + ' ' + (n.type || ''))
         .toLowerCase()
         .includes(groupDraft.search.toLowerCase()) &&

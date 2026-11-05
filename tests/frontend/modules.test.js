@@ -8,6 +8,8 @@ import { healthSubscriptionChoices, resolveHealthSubscription, subscriptionHealt
 import { diagnosticKey, latencyTone } from '../../app/static/js/features/group-diagnostics.js';
 import { riskBand, riskPosition, ipAttribute, locationText } from '../../app/static/js/pages/purity.js';
 import { nodeHistory } from '../../app/static/js/ui/history.js';
+import { compactRate, trafficSparkline } from '../../app/static/js/ui/sidebar-traffic.js';
+import { nodeRegion } from '../../app/static/js/features/node-picker.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../app/static');
 async function moduleFiles(directory) {
@@ -66,6 +68,14 @@ test('health subscription helpers keep provider isolation and recover from a rem
   assert.equal(state.nodeProvider, 'all');
 });
 
+test('region filters recognize Taiwan labels independently of a China flag and reject unknown locations', () => {
+  assert.equal(nodeRegion('[01]台湾hinet家宽🇨🇳hy2'), 'TW');
+  assert.equal(nodeRegion('🇺🇲 美国Z02'), 'US');
+  assert.equal(nodeRegion('Singapore 01'), 'SG');
+  assert.equal(nodeRegion('香港入口'), 'HK');
+  assert.equal(nodeRegion('德国 01'), undefined);
+});
+
 test('both history views share accessible success and failure details', () => {
   const html = nodeHistory({ history: [{ time: '2026-10-17T00:00:00Z', delay: 82 }, { time: '2026-10-17T00:01:00Z', delay: 0 }] });
   assert.match(html, /data-health-result="延迟 82 ms"/);
@@ -99,4 +109,17 @@ test('IPPure uses website risk intervals and treats missing fields as unknown', 
   assert.equal(ipAttribute('__proto__'), '暂未提供');
   assert.equal(ipAttribute('constructor'), '暂未提供');
   assert.equal(locationText({ country_code:'HK', region:'Hong Kong', city:'Central' }).includes('Central'), true);
+});
+
+
+test('sidebar traffic keeps unknown rates distinct from zero and scales shared samples', () => {
+  assert.equal(compactRate(0), '0B/s');
+  assert.equal(compactRate(1536), '1.5K/s');
+  for (const value of [null, undefined, -1, NaN, Infinity, '<script>']) assert.equal(compactRate(value), '—');
+  const history = [{download:100,upload:20},{download:200,upload:50},{download:null,upload:null},{download:50,upload:10},{download:80,upload:30}];
+  const svg=trafficSparkline(history);
+  assert.equal((svg.match(/<polyline/g)||[]).length,4, 'Missing samples must break both lines');
+  assert.doesNotMatch(svg,/NaN|Infinity|undefined/);
+  assert.doesNotThrow(()=>trafficSparkline([null,{download:Infinity,upload:'bad'}]));
+  assert.equal((trafficSparkline([]).match(/<polyline/g)||[]).length,0);
 });

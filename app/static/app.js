@@ -12,8 +12,12 @@ import { initModal, closeModal } from './js/ui/modal.js';
 import { initClipboard } from './js/ui/clipboard.js';
 import { initHistoryTooltip } from './js/ui/history.js';
 import { initProxyGuide } from './js/features/proxy-guide.js';
+import { refreshMaintenance } from './js/pages/advanced.js';
 import { refreshPurity } from './js/pages/purity.js';
 import { refreshCampus } from './js/pages/campus.js';
+import { refreshRouter } from './js/pages/router.js';
+import { refreshRoutingDiagnostics } from './js/pages/routing-diagnostics.js';
+import { renderSidebarTraffic } from './js/ui/sidebar-traffic.js';
 import { renderLive } from './js/pages/overview.js';
 import { refreshGroupDiagnostics } from './js/features/group-diagnostics.js';
 import { initPolling, poll } from './js/polling.js';
@@ -43,13 +47,15 @@ initShell(navigate);
 initRouter();
 $('#refresh').onclick = act(async () => {
   await loadAll();
-  if (state.page === 'overview') {
-    const [telemetry] = await Promise.all([api('/api/telemetry'), refreshGroupDiagnostics()]);
-    state.telemetry = telemetry;
-    renderLive();
-  }
+  const [telemetry] = await Promise.all([api('/api/telemetry'), state.page === 'overview' ? refreshGroupDiagnostics() : Promise.resolve()]);
+  state.telemetry = telemetry;
+  renderSidebarTraffic();
+  if (state.page === 'overview') renderLive();
+  if (state.page === 'advanced') await refreshMaintenance();
   if (state.page === 'purity') await refreshPurity();
   if (state.page === 'campus') await refreshCampus();
+  if (state.page === 'router') await refreshRouter();
+  if (state.page === 'diagnostics') await refreshRoutingDiagnostics();
 });
 $('#modes').onclick = async (event) => {
   if (event.target.dataset.mode)

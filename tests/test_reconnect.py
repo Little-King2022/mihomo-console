@@ -39,7 +39,7 @@ class ReconnectRegression(unittest.TestCase):
                  patch.object(service.db,'list_groups',return_value=[]), \
                  patch.object(service.db,'list_rules',return_value=[]), \
                  patch.object(service.db,'list_cooldowns',return_value=[]), \
-                 patch.object(service.db,'get_setting',return_value=''), \
+                 patch.object(service.db,'get_setting',side_effect=lambda key, default=None: None if key=='rulesets' else ''), \
                  patch.object(service.subprocess,'run') as run, \
                  patch.object(service,'reload_core') as reload, \
                  patch.object(service.os,'replace') as replace:
@@ -58,6 +58,7 @@ class ReconnectRegression(unittest.TestCase):
              patch.object(service.db,'list_subscriptions',return_value=[{'id':1,'enabled':1}]), \
              patch.object(service.db,'list_node_health',return_value=[{'node_name':'node-a','fails':1,'checked_at':'old'}]), \
              patch.object(service.db,'list_cooldowns',return_value=[]), \
+             patch.object(service.db,'list_groups',return_value=[{'strategy':'select','enabled':1}]), \
              patch.object(service.db,'get_setting',side_effect=lambda k,d=None: None if k=='router_config' else d), \
              patch.object(service.db,'upsert_node_health'), patch.object(service.db,'replace_cooldowns'), \
              patch.object(service,'node_catalog',return_value=[]), patch.object(service,'migrate_group_nodes'), \

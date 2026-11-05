@@ -103,10 +103,18 @@ def status():
     matches = None
     try:
         rendered = yaml.safe_load(config_path().read_text())
-        matches = ((rendered.get("tun", {}).get("route-exclude-address") or []) == effective_excludes(data)
-                   and (rendered.get("dns", {}).get("nameserver-policy") or {}) == effective_policy(data)
-                   and (rendered.get("dns", {}).get("fake-ip-filter") or []) == effective_filters(data))
-    except (OSError, AttributeError, yaml.YAMLError):
+        if db.get_setting('router_config'):
+            from .render import render_config
+            settings = {k: db.get_setting(k) for k in ('router_config', 'campus_config', 'mode', 'tun', 'mihomo_secret', 'rulesets')}
+            settings['rule_provider_paths'] = {name: item.get('path') for name, item in (rendered.get('rule-providers') or {}).items()}
+            expected = yaml.safe_load(render_config(db.list_subscriptions(), db.list_groups(), [], settings, db.list_rules()))
+            matches = all(rendered.get(section, {}).get(key) == expected[section].get(key) for section, key in (
+                ('tun', 'route-exclude-address'), ('dns', 'nameserver-policy'), ('dns', 'fake-ip-filter')))
+        else:
+            matches = ((rendered.get("tun", {}).get("route-exclude-address") or []) == effective_excludes(data)
+                       and (rendered.get("dns", {}).get("nameserver-policy") or {}) == effective_policy(data)
+                       and (rendered.get("dns", {}).get("fake-ip-filter") or []) == effective_filters(data))
+    except (OSError, ValueError, AttributeError, yaml.YAMLError):
         pass
     return {**data, "effective_excludes": effective_excludes(data), "config_matches": matches,
             "tun": db.get_setting("tun", "1") == "1", "system": system_status()}
@@ -143,7 +151,7 @@ def diagnose(payload):
     if kind not in ("route", "ping", "tcp", "dns"):
         raise ValueError("请选择路由、Ping、TCP 或 DNS 检查")
     data = config()
-    policies = [d for d in data["dns"] if d["enabled"] and d.get("server")]
+    policies = [dict(d, server=server) for d in data["dns"] if d["enabled"] and d.get("server") for server in d['server'].split()]
     default_dns = next(iter(policies), {})
     address = allowed_address(payload.get("target", default_dns.get("server")), data)
     port = None

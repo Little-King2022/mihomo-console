@@ -1,4 +1,4 @@
-import { $, e, empty } from './core/dom.js';
+import { $, empty } from './core/dom.js';
 import { state } from './core/state.js';
 import { hideHistoryTooltip } from './ui/history.js';
 import { renderOverview } from './pages/overview.js';
@@ -9,40 +9,33 @@ import { renderNodes } from './pages/nodes.js';
 import { renderPurity } from './pages/purity.js';
 import { renderAdvanced } from './pages/advanced.js';
 import { renderCampus } from './pages/campus.js';
+import { renderRouter } from './pages/router.js';
+import { renderRoutingDiagnostics } from './pages/routing-diagnostics.js';
+import { renderRulesets } from './pages/rulesets.js';
 
-const pages = ['overview', 'subs', 'rules', 'groups', 'nodes', 'purity', 'campus', 'advanced'];
+const pages = ['overview', 'subs', 'rules', 'groups', 'rulesets', 'nodes', 'purity', 'campus', 'router', 'diagnostics', 'advanced'];
 
 const titles = {
   overview: '概览',
   subs: '订阅',
   rules: '分流规则',
   groups: '代理组',
+  rulesets: '规则集',
   nodes: '节点健康',
   purity: 'IP 纯净度',
   campus: '校园网',
+  router: '路由器',
+  diagnostics: '分流诊断',
   advanced: '高级',
 };
 
-const pageMeta = {
-  overview: ['NETWORK OVERVIEW', '网络概览', '每一次连接，都有迹可循。'],
-  subs: ['SUBSCRIPTIONS', '订阅管理', '从套餐用量到更新状态，一眼掌握。'],
-  rules: ['TRAFFIC ROUTING', '分流规则', '给不同的服务，安排合适的出口。'],
-  groups: ['PROXY GROUPS', '代理组', '用一组可靠的节点，连接更大的世界。'],
-  nodes: ['NODE HEALTH', '节点健康', '用真实的测速记录，找到稳定的连接。'],
-  purity: ['IP PURITY', 'IP 纯净度', '看清出口的身份，了解 IP 的风险。'],
-  campus: ['CAMPUS NETWORK', '校园网', '管理校园网段、DNS 与直连路由。'],
-  advanced: ['PREFERENCES', '高级设置', '更多控制，在你需要的时候。'],
-};
+const pageScroll = new Map();
 
 function renderCurrent() {
   hideHistoryTooltip();
   const current = state.page;
   pages.forEach((name) => $('#page-' + name).classList.toggle('hidden', name !== current));
-  const meta = pageMeta[current];
-  $('#breadcrumb-page').textContent = titles[current];
-  $('#page-eyebrow').textContent = meta[0];
-  $('#title').innerHTML = e(meta[1]) + '<span class="heading-dot">.</span>';
-  $('#page-description').textContent = meta[2];
+  $('#title').textContent = titles[current];
   if (!state.overview) {
     $('#page-' + current).innerHTML = empty('正在加载…');
     return;
@@ -52,9 +45,12 @@ function renderCurrent() {
     subs: renderSubs,
     rules: renderRules,
     groups: renderGroups,
+    rulesets: renderRulesets,
     nodes: renderNodes,
     purity: renderPurity,
     campus: renderCampus,
+    router: renderRouter,
+    diagnostics: renderRoutingDiagnostics,
     advanced: renderAdvanced,
   })[current]();
 }
@@ -71,6 +67,9 @@ function restoredPage() {
 
 function navigate(name, { replace = false } = {}) {
   if (!pages.includes(name)) return;
+  const changed = state.page !== name;
+  const content = $('#workspace-content');
+  if (changed) pageScroll.set(state.page, content.scrollTop);
   state.page = name;
   try {
     sessionStorage.setItem('mihomo-page', name);
@@ -83,6 +82,7 @@ function navigate(name, { replace = false } = {}) {
     x.setAttribute('aria-current', on ? 'page' : 'false');
   });
   renderCurrent();
+  if (changed) content.scrollTop = pageScroll.get(name) || 0;
 }
 export function initRouter() {
   document

@@ -147,6 +147,10 @@ def init_db():
             conn.execute("ALTER TABLE node_health ADD COLUMN history TEXT NOT NULL DEFAULT '[]'")
         if "selected_nodes" not in {row[1] for row in conn.execute("PRAGMA table_info(groups)")}:
             conn.execute("ALTER TABLE groups ADD COLUMN selected_nodes TEXT")
+        if 'balance_config' not in {row[1] for row in conn.execute('PRAGMA table_info(groups)')}:
+            conn.execute("ALTER TABLE groups ADD COLUMN balance_config TEXT NOT NULL DEFAULT '{}'")
+        if 'fetch_group_id' not in {row[1] for row in conn.execute('PRAGMA table_info(subscriptions)')}:
+            conn.execute('ALTER TABLE subscriptions ADD COLUMN fetch_group_id INTEGER NOT NULL DEFAULT 0')
         conn.commit()
     if get_setting("web_token") is None:
         token = secrets.token_urlsafe(18)
@@ -218,6 +222,17 @@ def init_db():
                 update_group(old["id"], {"name": "台湾家宽"})
             set_setting("taiwan_group_renamed", "1")
 
+    from . import rulesets
+    if get_setting('rulesets') is None:
+        set_setting('rulesets', dump_json(rulesets.defaults()))
+
+
+def migrate_load_balance():
+    """Run inside config_change so core validation and rollback cover migration."""
+    for group in list_groups():
+        if group['strategy'] == 'load-balance':
+            update_group(group['id'], {'strategy': 'fallback'})
+
 
 def get_setting(key, default=None):
     rows = _query("SELECT value FROM settings WHERE key = ?", (key,))
@@ -259,12 +274,12 @@ def update_subscription(sub_id, fields):
     if not current:
         return None
     merged = dict(current)
-    for key in ("name", "url", "enabled", "interval_hours", "last_update", "last_info", "last_error"):
+    for key in ("name", "url", "enabled", "interval_hours", "last_update", "last_info", "last_error", "fetch_group_id"):
         if key in fields and fields[key] is not None:
             merged[key] = fields[key]
     _execute(
         """UPDATE subscriptions
-           SET name=?, url=?, enabled=?, interval_hours=?, last_update=?, last_info=?, last_error=?
+           SET name=?, url=?, enabled=?, interval_hours=?, last_update=?, last_info=?, last_error=?, fetch_group_id=?
            WHERE id=?""",
         (
             str(merged["name"]).strip(),
@@ -274,6 +289,7 @@ def update_subscription(sub_id, fields):
             merged["last_update"],
             merged["last_info"],
             merged["last_error"],
+            int(merged.get('fetch_group_id') or 0),
             sub_id,
         ),
     )
@@ -287,6 +303,7 @@ def delete_subscription(sub_id):
 def decode_group(row):
     item = dict(row)
     item["selected_nodes"] = json.loads(item["selected_nodes"]) if item.get("selected_nodes") is not None else None
+    item['balance_config'] = json.loads(item.get('balance_config') or '{}')
     return item
 
 
@@ -303,8 +320,8 @@ def add_group(fields):
     if int(fields.get("is_default") or 0):
         _execute("UPDATE groups SET is_default = 0")
     cur = _execute(
-        """INSERT INTO groups(name, strategy, node_filter, exclude_filter, domains, rule_sets, priority, enabled, is_default, selected_nodes)
-           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO groups(name, strategy, node_filter, exclude_filter, domains, rule_sets, priority, enabled, is_default, selected_nodes, balance_config)
+           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             fields["name"].strip(),
             fields.get("strategy") or "fallback",
@@ -316,6 +333,7 @@ def add_group(fields):
             int(fields.get("enabled", 1)),
             int(fields.get("is_default") or 0),
             dump_json(fields["selected_nodes"]) if fields.get("selected_nodes") is not None else None,
+            dump_json(fields.get('balance_config') or {}),
         ),
     )
     return cur.lastrowid
@@ -332,6 +350,7 @@ def update_group(group_id, fields):
         "node_filter",
         "exclude_filter",
         "selected_nodes",
+        "balance_config",
         "domains",
         "rule_sets",
         "priority",
@@ -344,7 +363,7 @@ def update_group(group_id, fields):
         _execute("UPDATE groups SET is_default = 0 WHERE id != ?", (group_id,))
     _execute(
         """UPDATE groups
-           SET name=?, strategy=?, node_filter=?, exclude_filter=?, domains=?, rule_sets=?, priority=?, enabled=?, is_default=?, selected_nodes=?
+           SET name=?, strategy=?, node_filter=?, exclude_filter=?, domains=?, rule_sets=?, priority=?, enabled=?, is_default=?, selected_nodes=?, balance_config=?
            WHERE id=?""",
         (
             str(merged["name"]).strip(),
@@ -357,6 +376,7 @@ def update_group(group_id, fields):
             int(merged["enabled"]),
             int(merged["is_default"]),
             dump_json(merged["selected_nodes"]) if merged.get("selected_nodes") is not None else None,
+            dump_json(merged.get('balance_config') or {}),
             group_id,
         ),
     )

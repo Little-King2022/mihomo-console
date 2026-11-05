@@ -12,11 +12,11 @@ export function loadAll() {
   if (refreshing) return refreshing;
   refreshing = (async () => {
     const data = await Promise.all(
-      ['/api/overview', '/api/subscriptions', '/api/rules', '/api/groups', '/api/nodes'].map(
+      ['/api/overview', '/api/subscriptions', '/api/rules', '/api/groups', '/api/nodes', '/api/rulesets'].map(
         (path) => api(path),
       ),
     );
-    [state.overview, state.subs, state.rules, state.groups, state.nodes] = data;
+    [state.overview, state.subs, state.rules, state.groups, state.nodes, state.rulesets] = data;
     lastRefresh = Date.now();
     emit('data:updated');
   })().finally(() => {

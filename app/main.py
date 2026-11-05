@@ -13,7 +13,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import campus, db, diagnostics, service
+from . import campus, db, diagnostics, service, router, routing_diagnostics
+from . import rulesets, maintenance
 
 log = logging.getLogger("mihomo-console")
 STATIC = Path(__file__).resolve().parent / "static"
@@ -61,6 +62,10 @@ async def background():
     while True:
         interval = max(int(db.get_setting("health_interval", "30")), 15)
         try:
+            try:
+                await asyncio.to_thread(service.refresh_rule_overrides)
+            except Exception:
+                log.warning('规则集本地排除更新失败，保留上一版有效配置')
             await asyncio.to_thread(service.collect_health)
             if db.get_setting("auto_update", "1") == "1":
                 await asyncio.to_thread(refresh_due_subscriptions)
@@ -96,9 +101,17 @@ async def lifespan(_app):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     db.init_db()
     try:
+        await asyncio.to_thread(maintenance.recover)
+    except Exception:
+        log.error('维护中断后的恢复未完成，请检查本机备份与服务')
+    try:
         await asyncio.to_thread(service.migrate_group_nodes)
     except (httpx.HTTPError, RuntimeError):
         log.warning("节点选择迁移将在内核就绪后重试")
+    try:
+        await asyncio.to_thread(service.migrate_load_balance)
+    except Exception:
+        log.error('旧负载均衡组迁移未完成，已保留原配置；请检查内核状态后重启控制台')
     task = asyncio.create_task(background())
     yield
     task.cancel()
@@ -183,6 +196,25 @@ def campus_status(request: Request):
     return campus.status()
 
 
+@app.get('/api/router')
+def router_status(request: Request):
+    require(request)
+    return router.status()
+
+
+@app.put('/api/router')
+def router_save(payload: dict, request: Request):
+    require(request)
+    try:
+        with service.config_change():
+            router.change(payload)
+        return router.status()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail='路由器配置应用失败，已保留原设置；请检查本机服务') from exc
+
+
 def campus_mutation(kind, payload=None, entry_id=None, delete=False):
     try:
         with service.config_change():
@@ -195,6 +227,17 @@ def campus_mutation(kind, payload=None, entry_id=None, delete=False):
     except Exception as exc:
         # Core validation output can contain subscription details; never return it.
         raise HTTPException(status_code=400, detail="校园网配置应用失败，已保留原设置；请检查内核与配置") from exc
+
+
+@app.post('/api/routing/diagnostics')
+def routing_diagnostic(payload: dict, request: Request):
+    require(request)
+    try:
+        return routing_diagnostics.diagnose(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (RuntimeError, OSError, httpx.HTTPError, KeyError, TypeError, yaml.YAMLError) as exc:
+        raise HTTPException(status_code=502, detail='分流诊断未完成，请检查 DNS、内核 API 与系统工具') from exc
 
 
 @app.post("/api/campus/diagnostics")
@@ -245,8 +288,9 @@ def create_subscription(payload: dict, request: Request):
     url = str(payload.get("url") or "").strip()
     if not name or not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="需要名称和 http(s) 订阅链接")
-    sub_id = db.add_subscription(name, url, int(payload.get("interval_hours") or 6), bool(payload.get("enabled", True)))
-    service.apply_config()
+    with service.config_change():
+        sub_id = db.add_subscription(name, url, int(payload.get("interval_hours") or 6), bool(payload.get("enabled", True)))
+        db.update_subscription(sub_id, {'fetch_group_id': clean_fetch_group(payload.get('fetch_group_id', 0))})
     return db.get_subscription(sub_id)
 
 
@@ -255,10 +299,12 @@ def edit_subscription(sub_id: int, payload: dict, request: Request):
     require(request)
     if payload.get("url") and not str(payload["url"]).startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="订阅链接必须以 http:// 或 https:// 开头")
-    updated = db.update_subscription(sub_id, payload)
-    if not updated:
-        raise HTTPException(status_code=404, detail="订阅不存在")
-    service.apply_config()
+    with service.config_change():
+        if 'fetch_group_id' in payload:
+            payload['fetch_group_id'] = clean_fetch_group(payload['fetch_group_id'])
+        updated = db.update_subscription(sub_id, payload)
+        if not updated:
+            raise HTTPException(status_code=404, detail="订阅不存在")
     return updated
 
 
@@ -267,8 +313,8 @@ def remove_subscription(sub_id: int, request: Request):
     require(request)
     if not db.get_subscription(sub_id):
         raise HTTPException(status_code=404, detail="订阅不存在")
-    db.delete_subscription(sub_id)
-    service.apply_config()
+    with service.config_change():
+        db.delete_subscription(sub_id)
     return {"ok": True}
 
 
@@ -311,10 +357,10 @@ def groups(request: Request):
 def clean_group(payload, existing=None):
     name = str(payload.get("name", existing["name"] if existing else "")).strip()
     strategy = str(payload.get("strategy", existing["strategy"] if existing else "fallback"))
-    if not name or any(c in name for c in ",\r\n") or name.upper() in ("DIRECT", "REJECT", "GLOBAL", "PASS", "COMPATIBLE"):
+    if not name or name.startswith('__console_lb_') or any(c in name for c in ",\r\n") or name.upper() in ("DIRECT", "REJECT", "GLOBAL", "PASS", "COMPATIBLE"):
         raise HTTPException(status_code=400, detail="请填写代理组名称，不能使用保留名称、逗号或换行")
     if strategy not in ("fallback", "url-test", "select"):
-        raise HTTPException(status_code=400, detail="策略只能是 fallback、url-test 或 select")
+        raise HTTPException(status_code=400, detail="请选择有效的节点使用策略")
     rule_sets = payload.get("rule_sets", existing["rule_sets"] if existing else "")
     if isinstance(rule_sets, list):
         rule_sets = ",".join(rule_sets)
@@ -335,12 +381,23 @@ def clean_group(payload, existing=None):
         if key not in seen:
             cleaned.append({"provider": key[0], "name": key[1]})
             seen.add(key)
+    # Keep the saved identity order when the picker or subscription reorders nodes.
+    reorder = payload.get('reorder_nodes', False)
+    if not isinstance(reorder, bool):
+        raise HTTPException(status_code=400, detail='节点排序选项须为布尔值')
+    retained = [n for n in (existing or {}).get('selected_nodes') or [] if (n['provider'], n['name']) in seen] if not reorder else []
+    retained_keys = {(n['provider'], n['name']) for n in retained}
+    cleaned = retained + [n for n in cleaned if (n['provider'], n['name']) not in retained_keys]
+    if 'balance_config' in payload:
+        raise HTTPException(status_code=400, detail='负载均衡功能已移除')
     if not cleaned or (payload.get("enabled", existing["enabled"] if existing else True) and not seen.intersection(known)):
         raise HTTPException(status_code=400, detail="请至少勾选一个当前订阅中的节点")
     if existing and existing["is_default"] and not payload.get("is_default", True):
         raise HTTPException(status_code=400, detail="请在另一个启用的代理组中设置默认出口")
     enabled = payload.get("enabled", bool(existing["enabled"]) if existing else True)
     is_default = payload.get("is_default", bool(existing["is_default"]) if existing else False)
+    if not enabled and existing and any(s.get('fetch_group_id') == existing['id'] for s in db.list_subscriptions()):
+        raise HTTPException(status_code=400, detail='此组仍用于订阅下载，请先修改订阅下载出口')
     if not enabled and (is_default or (existing and any(r["enabled"] and r["group_id"] == existing["id"] for r in db.list_rules()))):
         raise HTTPException(status_code=400, detail="请先为规则或默认出口选择其他代理组，再停用此组")
     return {
@@ -391,7 +448,7 @@ def remove_group(group_id: int, request: Request):
     require(request)
     if not db.get_group(group_id):
         raise HTTPException(status_code=404, detail="代理组不存在")
-    if db.get_group(group_id)["is_default"] or any(r["group_id"] == group_id for r in db.list_rules()):
+    if db.get_group(group_id)["is_default"] or any(r["group_id"] == group_id for r in db.list_rules()) or any(s.get('fetch_group_id') == group_id for s in db.list_subscriptions()):
         raise HTTPException(status_code=400, detail="此组仍作为默认出口或被规则使用，请先修改分流目标")
     try:
         with service.config_change():
@@ -399,6 +456,17 @@ def remove_group(group_id: int, request: Request):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True}
+
+
+def clean_fetch_group(value):
+    try:
+        ident = int(value or 0)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail='请选择有效的订阅下载出口') from exc
+    group = db.get_group(ident) if ident else None
+    if ident and (not group or not group['enabled']):
+        raise HTTPException(status_code=400, detail='订阅下载出口必须为启用的代理组')
+    return ident
 
 
 @app.post("/api/mode")
@@ -414,9 +482,9 @@ def change_mode(payload: dict, request: Request):
 @app.post("/api/tun")
 def change_tun(payload: dict, request: Request):
     require(request)
-    db.set_setting("tun", "1" if payload.get("enabled") else "0")
     try:
-        service.apply_config()
+        with service.config_change():
+            db.set_setting("tun", "1" if payload.get("enabled") else "0")
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"tun": db.get_setting("tun") == "1"}
@@ -474,13 +542,28 @@ def kernel(request: Request):
     return {"version": service.version()}
 
 
-@app.post("/api/kernel/upgrade")
-def upgrade(request: Request):
+@app.get('/api/maintenance')
+def maintenance_status(request: Request):
+    require(request)
+    return maintenance.status()
+
+
+@app.post('/api/maintenance/{kind}/{action}')
+def maintenance_action(kind: str, action: str, request: Request, payload: dict = None):
     require(request)
     try:
-        return service.upgrade_kernel()
+        if action == 'check':
+            return maintenance.check(kind)
+        return maintenance.start(kind, action, (payload or {}).get('version'))
+    except maintenance.MaintenanceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail='无法检查官方发布或启动维护任务，请检查网络和本机权限') from exc
+
+
+@app.post('/api/kernel/upgrade')
+def upgrade(request: Request, payload: dict = None):
+    return maintenance_action('kernel', 'upgrade', request, payload)
 
 
 @app.get("/api/telemetry")
@@ -525,7 +608,7 @@ def clean_rule(payload, current=None):
     sets = fields["rule_sets"]
     if isinstance(sets, str):
         sets = [x.strip() for x in sets.split(",") if x.strip()]
-    if not isinstance(sets, list) or any(x not in ("openai", "claude", "gemini") for x in sets):
+    if not isinstance(sets, list) or any(not isinstance(x, str) or x not in {s['name'] for s in rulesets.load(db.get_setting('rulesets'))} for x in sets):
         raise HTTPException(status_code=400, detail="不支持的规则集")
     fields["rule_sets"] = ",".join(dict.fromkeys(sets))
     domains = []
@@ -534,8 +617,10 @@ def clean_rule(payload, current=None):
         if not item or item.startswith("#"):
             continue
         prefix = ""
-        if item.upper().startswith("DOMAIN,"):
-            prefix, item = "DOMAIN,", item[7:]
+        for kind in ("DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD"):
+            if item.upper().startswith(kind + ","):
+                prefix, item = kind + ",", item[len(kind) + 1:]
+                break
         item = item.removeprefix("*.").removeprefix("+.").rstrip(".")
         try:
             item = item.encode("idna").decode("ascii").lower()
@@ -600,3 +685,118 @@ def node_catalog(request: Request):
         return service.node_catalog()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="无法读取订阅节点，请稍后刷新") from exc
+
+
+@app.get('/api/rulesets')
+def list_rulesets(request: Request):
+    require(request)
+    return rulesets.listing()
+
+
+def mutate_ruleset(payload=None, name=None, delete=False):
+    try:
+        with service.config_change():
+            items = rulesets.load(db.get_setting('rulesets'))
+            current = next((x for x in items if x['name'] == name), None)
+            if name is not None and current is None:
+                raise HTTPException(status_code=404, detail='规则集不存在')
+            if delete:
+                if rulesets.references(name):
+                    raise HTTPException(status_code=409, detail='规则集仍被引用，请先解除引用')
+                items.remove(current)
+            else:
+                item = rulesets.clean(dict(current or {}, **payload))
+                if name is not None and item['name'] != name:
+                    raise ValueError('规则集名称创建后不可修改；可新建后替换引用')
+                if current is None and any(x['name'] == item['name'] for x in items):
+                    raise HTTPException(status_code=409, detail='规则集名称已存在')
+                if current is not None:
+                    items[items.index(current)] = item
+                else:
+                    items.append(item)
+            db.set_setting('rulesets', db.dump_json(items))
+        return {'ok': True}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail='规则集应用失败，已保留原配置；请检查来源内容与内核状态') from exc
+
+
+@app.post('/api/rulesets')
+def create_ruleset(payload: dict, request: Request):
+    require(request)
+    return mutate_ruleset(payload)
+
+
+@app.put('/api/rulesets/{name}')
+def edit_ruleset(name: str, payload: dict, request: Request):
+    require(request)
+    return mutate_ruleset(payload, name)
+
+
+@app.delete('/api/rulesets/{name}')
+def delete_ruleset(name: str, request: Request):
+    require(request)
+    return mutate_ruleset(name=name, delete=True)
+
+
+@app.get('/api/rulesets/{name}/entries')
+def ruleset_entries(name: str, request: Request, query: str = '', page: int = 1):
+    require(request)
+    if not 1 <= page <= 100000 or len(query) > 253:
+        raise HTTPException(status_code=400, detail='搜索内容或页码不正确')
+    try:
+        with service.config_lock():
+            return rulesets.entry_listing(name, service.config_dir(), query, page)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail='尚未读取到来源缓存，请等待内核下载完成后重试') from exc
+
+
+@app.post('/api/rulesets/{name}/entries')
+def ruleset_entry_change(name: str, payload: dict, request: Request):
+    require(request)
+    entry, restore = payload.get('entry'), payload.get('restore', False)
+    if not isinstance(entry, str) or not entry.strip() or len(entry) > 2048 or not isinstance(restore, bool):
+        raise HTTPException(status_code=400, detail='条目格式不正确')
+    try:
+        with service.config_change():
+            items = rulesets.load(db.get_setting('rulesets'))
+            item = next((x for x in items if x['name'] == name), None)
+            if item is None:
+                raise HTTPException(status_code=404, detail='规则集不存在')
+            if item['format'] == 'mrs':
+                raise ValueError('MRS 为二进制格式，请改用 YAML 或 text 来源后编辑条目')
+            key = rulesets.exclusion_key(entry, item['behavior'])
+            if item['type'] == 'inline':
+                if restore:
+                    raise ValueError('内联规则请通过编辑内容添加条目')
+                entries = item['payload']
+            else:
+                entries = rulesets.parse_payload((service.config_dir() / rulesets.source_provider(item)['path']).read_text(), item['format'])
+            if restore:
+                item['excluded'] = [x for x in item['excluded'] if rulesets.exclusion_key(x, item['behavior']) != key]
+            else:
+                matching = [x for x in entries if rulesets.exclusion_key(x, item['behavior']) == key]
+                if not matching:
+                    raise HTTPException(status_code=404, detail='条目已不在当前来源中，请刷新后重试')
+                if item['type'] == 'inline':
+                    item['payload'] = [x for x in entries if rulesets.exclusion_key(x, item['behavior']) != key]
+                    if not item['payload']:
+                        raise ValueError('内联集合至少保留一条规则；可从规则集列表删除整个集合')
+                else:
+                    item['excluded'] = list(dict.fromkeys(item['excluded'] + matching))
+            rulesets.clean(item)
+            db.set_setting('rulesets', db.dump_json(items))
+        return {'ok': True}
+    except HTTPException:
+        raise
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail='条目保存失败，请检查条目及来源缓存') from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail='条目应用失败，已保留原配置') from exc

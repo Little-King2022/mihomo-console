@@ -14,7 +14,7 @@ function act(work) {
       button.setAttribute('aria-busy', 'true');
     }
     try {
-      await work();
+      await work(event);
       if (state.authenticated) await loadAll();
       toast('已完成');
     } catch (error) {

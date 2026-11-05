@@ -1,5 +1,6 @@
 import { $ } from '../core/dom.js';
 import { state } from '../core/state.js';
+import { renderSidebarTraffic } from './sidebar-traffic.js';
 import { icon } from './icons.js';
 
 function renderMode() {
@@ -10,6 +11,7 @@ function renderMode() {
   });
   $('#tun').textContent = state.overview.tun ? 'TUN 已开启' : 'TUN 已关闭';
   $('#tun').classList.toggle('primary', state.overview.tun);
+  $('#tun').setAttribute('aria-checked', String(!!state.overview.tun));
   $('#kernel-version').textContent = state.overview.version;
 }
 
@@ -28,6 +30,9 @@ export function initShell(navigate) {
     };
   });
 
+  const params = new URLSearchParams({hostname: location.hostname, port: location.port || (location.protocol === 'https:' ? '443' : '80'), [location.protocol === 'https:' ? 'https' : 'http']: 'true'});
+  $('#panel-link').href = '/ui/#/?' + params.toString();
+  renderSidebarTraffic();
   renderThemeButton();
   $('#theme-toggle').onclick = () => {
     const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';

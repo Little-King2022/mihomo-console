@@ -7,6 +7,8 @@ Type=simple
 WorkingDirectory=/opt/mihomo-console
 Environment=DATA_DIR=/opt/mihomo-console/data
 Environment=MIHOMO_HOME=/opt/mihomo
+Environment=ROUTER_MANAGEMENT=1
+UMask=0077
 ExecStart=/opt/mihomo-console/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8787
 Restart=always
 RestartSec=2
